@@ -1,0 +1,297 @@
+import argparse
+import atexit
+import csv
+import json
+import multiprocessing
+import os
+import itertools
+import uuid
+
+from datetime import datetime
+
+from aalpy.utils import load_automaton_from_file
+from pebble import ProcessPool
+
+from active_pmsatlearn.utils import *
+from evaluation.generate_automata import *
+from evaluation.utils import *
+from evaluation.defs import algorithms, oracles, PerfectMooreOracle
+
+
+def get_all_automata_files_from_dir(directory: str):
+    if not os.path.isdir(directory):
+        return []
+
+    return [os.path.join(os.path.abspath(directory), filename) for filename in os.listdir(directory) if (os.path.splitext(filename)[-1] == ".dot")]
+
+
+def get_generated_automata_files_to_learn(num_automata_per_combination: int, automata_type: Literal["mealy", "moore"],
+                                          num_states: int | range, num_inputs: int | range, num_outputs: int | range,
+                                          generated_automata_dir: str, reuse_existing_automata: bool = True):
+        files = []
+        for current_num_states in parse_range(num_states):
+            for current_num_inputs in parse_range(num_inputs):
+                for current_num_outputs in parse_range(num_outputs):
+                    if not is_valid_automata_configuration(automata_type, current_num_states, current_num_inputs, current_num_outputs):
+                        continue
+                    if reuse_existing_automata:
+                        matching_automata = matching_automata_files_in_directory(generated_automata_dir,
+                                                                                 automata_type,
+                                                                                 current_num_states,
+                                                                                 current_num_inputs,
+                                                                                 current_num_outputs)
+                        files.extend(matching_automata)
+                        missing = num_automata_per_combination - len(matching_automata)
+                    else:
+                        missing = num_automata_per_combination
+
+                    for _ in range(missing):
+                        _automaton, filename = generate_automaton(automata_type,
+                                                                  current_num_states,
+                                                                  current_num_inputs,
+                                                                  current_num_outputs,
+                                                                  generated_automata_dir)
+                        files.append(filename)
+
+        return files
+
+
+def setup_sul(automaton: MealyMachine | MooreMachine, max_num_steps: int | None = None, glitch_percent: float = 0.0):
+    if isinstance(automaton, MooreMachine):
+        sul = TracedMooreSUL(automaton)
+    elif isinstance(automaton, MealyMachine):
+        sul = MealySUL(automaton)
+        if glitch_percent:
+            raise NotImplementedError("TracedMealySUL has not yet been implemented - needed to introduce glitches!")
+    else:
+        raise TypeError("Invalid automaton type")
+
+    if max_num_steps is not None:
+        sul = MaxStepsSUL(sul, max_num_steps)
+
+    if glitch_percent:
+        sul = GlitchingSUL(sul, glitch_percent, 'discard')
+
+    return sul
+
+
+def check_equal(sul: MooreSUL, learned_mm: MooreMachine):
+    if learned_mm is None:
+        return False
+    perfect_oracle = PerfectMooreOracle(sul)
+    cex = perfect_oracle.find_cex(learned_mm)
+    return True if cex is None else False
+
+
+def stop_remaining_jobs(pool: ProcessPool):
+    print("Stopping remaining jobs in process pool...")
+    pool.close()
+    pool.stop()
+    pool.join()
+    print("Processes should be stopped now...")
+
+
+def result_json_files_to_csv(results_dir):
+    results = []
+    for file in os.listdir(results_dir):
+        if file == "info.json":
+            continue
+        file_path = os.path.join(results_dir, file)
+        with open(file_path, 'r') as f:
+            result = json.load(f)
+            results.append(result)
+    results_file = os.path.join(results_dir, "all_results.csv")
+    print(f"Writing all results to {results_file}...")
+    write_results_to_csv(results, results_file)
+    print(f"Finished writing results to {results_file}.")
+
+
+def write_results_info(results_dir, automata_type, automata_files, algorithm_names, learn_num_times, max_num_steps,
+                       oracle_types, results_file):
+    os.makedirs(results_dir, exist_ok=True)
+    with open(os.path.join(results_dir, "info.json"), "w") as f:
+        json.dump(dict(automata_type=automata_type,
+                       automata_files=automata_files,
+                       algorithm_names=algorithm_names,
+                       oracle_types=oracle_types,
+                       learn_num_times=learn_num_times,
+                       max_num_steps=max_num_steps,
+                       results_file=results_file),
+                  f,
+                  indent=4)
+
+    atexit.register(result_json_files_to_csv, results_dir)
+
+
+def write_single_json_result(results_dir, automaton_file, info):
+    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    with open(os.path.join(results_dir, f"{now}_learning_results_{os.path.basename(automaton_file)}_{info['algorithm_name']}_{uuid.uuid4().hex[:8]}.json"), "w") as f:
+        json.dump(info, f, indent=4)
+
+
+def write_results_to_csv(results: list[dict], results_file: str):
+    # TODO: overwrite/append?
+    headers = set()
+    for d in results:
+        headers.update(d.keys())
+    headers = list(headers)
+
+    if os.path.splitext(results_file)[-1] != ".csv":
+        results_file += ".csv"
+
+    print(f"Writing results to {results_file}")
+
+    with open(results_file, mode='w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(results)
+
+
+def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: str, oracle_type: str, results_dir: str,
+                    max_num_steps: int | None = None, glitch_percent: float = 0.0) -> dict[str, Any]:
+    automaton = load_automaton_from_file(automaton_file, automaton_type)
+    sul = setup_sul(automaton, max_num_steps, glitch_percent)
+    oracle = oracles[oracle_type](sul)
+    algorithm = algorithms[algorithm_name]
+    start_time = time.time()
+
+    print(f"Running {algorithm_name} with keywords {algorithm.unique_keywords} and oracle {oracle_type}")
+    try:
+        result, info = algorithm(alphabet=automaton.get_input_alphabet(), sul=sul, eq_oracle=oracle)
+        info["max_steps_reached"] = False
+    except MaxStepsReached:
+        result = None
+        info = {"max_steps_reached": True}
+    except Exception as e:
+        result = None
+        info = {'Exception': repr(e)}
+
+    learned_correctly = check_equal(sul, result)
+    if not learned_correctly:
+        print(f"Warning! {algorithm_name} did not learn correctly!")
+
+    info["start_time"] = start_time
+    info["algorithm_name"] = algorithm_name
+    info["automaton_type"] = automaton_type
+    info["oracle"] = oracle_type
+    info["learned_correctly"] = learned_correctly
+    info["original_automaton"] = automaton_file
+    info["max_num_steps"] = max_num_steps
+    info["glitch_percent"] = glitch_percent
+
+    write_single_json_result(results_dir, automaton_file, info)
+
+    print(f"Finished learning {algorithm_name}")
+    return info
+
+
+def learn_automaton_wrapper(args: tuple):
+    return learn_automaton(*args)
+
+
+@timeit("Learning automata")
+def learn_automata(automata_type: str, automata_files: list[str],
+                   algorithm_names: Sequence[str], oracle_types: Sequence[str], results_dir: str,
+                   learn_num_times: int = 5, max_num_steps: int | None = None,
+                   glitch_percent: float = 0.0):
+    all_combinations = [
+        (automata_type, automata_file, algorithm_name, oracle_type, results_dir, max_num_steps, glitch_percent)
+        for (automata_file, algorithm_name, oracle_type)
+        in itertools.product(automata_files, algorithm_names, oracle_types)
+    ]
+
+    print(f"Learning automata in {len(all_combinations)} unique constellations "
+          f"(algorithms: {algorithm_names} | oracles: {oracle_types} | and {len(automata_files)} files). "
+          f"Each constellation is learned {learn_num_times} times.")
+
+    all_combinations_n_times = [c for c in all_combinations for _ in range(learn_num_times)]
+
+    write_results_info(results_dir, automata_type, automata_files, algorithm_names, learn_num_times, max_num_steps,
+                       oracle_types, results_dir)
+
+    pool = ProcessPool(max_workers=multiprocessing.cpu_count() // 2)
+    atexit.register(stop_remaining_jobs, pool)
+
+    futures = pool.map(learn_automaton_wrapper, all_combinations_n_times)
+    results = [f for f in futures.result()]
+
+
+def main():
+    if len(sys.argv) > 1:
+        parser = argparse.ArgumentParser(description='Learn automata with different algorithms & oracles. '
+                                                     'You can also run interactively.')
+        parser.add_argument('-a', '--algorithms', type=str, nargs="+", choices=algorithms.keys(), required=True,
+                            help='Learning algorithms to learn automata with')
+        parser.add_argument('-o', '--oracles', type=str, nargs="+", choices=oracles.keys(), required=True,
+                            help='Equality oracles used during learning')
+        parser.add_argument('--learn_num_times', type=int, default=5,
+                            help='Number of times to learn the same automaton')
+        parser.add_argument('--max_num_steps', type=int, default=None,
+                            help='Maximum number of steps taken in the SUL during learning before aborting')
+        parser.add_argument('--glitch_percent', type=float, default=0.0,
+                            help='How many percent of steps in the SUL glitch (currently, only fault_mode="discard" is supported)')
+        parser.add_argument('--learn_all_automata_from_dir', type=str,
+                            help='Learn all automata from a directory. If this directory is specified, '
+                                 'all arguments concerning automata generation except -t are ignored. '
+                                 'You have to ensure yourself that all of these automata are instances of the '
+                                 'automaton type given with -t.')
+        add_automata_generation_arguments(parser)
+        parser.add_argument('--reuse', type=bool, default=True,
+                            help="Whether to reuse existing automata or to force generation of new ones")
+        parser.add_argument('-rd', '--results_dir', type=str, default="learning_results",
+                            help='Directory to store results in.')
+        args = parser.parse_args()
+
+        selected_algorithms = args.algorithms
+        selected_oracles = args.oracles
+        learn_num_times = args.learn_num_times
+        max_num_steps = args.max_num_steps
+        glitch_percent = args.glitch_percent
+        learn_from_dir = args.learn_all_automata_from_dir
+        num_automata_per_combination = args.num_automata_per_combination
+        automata_type = args.type
+        num_states = args.num_states
+        num_inputs = args.num_inputs
+        num_outputs = args.num_outputs
+        generated_automata_dir = args.generated_automata_dir
+        reuse_existing_automata = args.reuse
+        results_dir = new_file(args.results_dir)
+
+    else:
+        selected_algorithms = get_user_choices("Select algorithms to learn with", algorithms.keys())
+        selected_oracles = get_user_choices("Select oracles to learn with", oracles.keys())
+        learn_num_times = int(input("Enter number of times to learn the same automaton: "))
+        max_num_steps = input("Enter maximum number of steps to take in the SUL before aborting: ")
+        max_num_steps = int(max_num_steps) if max_num_steps else None
+        glitch_percent = input("Enter glitch percent (default: 0.0)")
+        glitch_percent = float(glitch_percent) if glitch_percent else 0.0
+
+        automata_type = input("Enter type of automata to generate: ")
+        if automata_type not in SUPPORTED_AUTOMATA_TYPES:
+            raise TypeError(f"Unsupported type of automata: '{automata_type}'")
+
+        learn_from_dir = bool(input("Learn all automata from a directory? (y/n) (default: no): ") in ("y", "Y", "yes"))
+        if learn_from_dir:
+            learn_from_dir = input(f"Enter directory (all contained automata must be {automata_type} automata): ")
+        else:
+            num_automata_per_combination = int(input("Enter number of automata to generate/learn (default: 5): ") or 5)
+            num_states = parse_range(input("Enter number of states per automaton: "))
+            num_inputs = parse_range(input("Enter number of inputs per automaton: "))
+            num_outputs = parse_range(input("Enter number of outputs per automaton: "))
+            generated_automata_dir = input("Enter directory to store generated automata in: ") or "generated_automata"
+            reuse_existing_automata = input("Reuse existing automata? (y/n) (default: yes): ") in ("y", "Y", "yes", "")
+
+        results_dir = new_file(input("Enter path to results directory: ") or "learning_results")
+
+    if learn_from_dir:
+        files_to_learn = get_all_automata_files_from_dir(learn_from_dir)
+    else:
+        files_to_learn = get_generated_automata_files_to_learn(num_automata_per_combination, automata_type,
+                                                               num_states, num_inputs, num_outputs,
+                                                               generated_automata_dir, reuse_existing_automata)
+
+    learn_automata(automata_type, files_to_learn, selected_algorithms, selected_oracles, results_dir,
+                   learn_num_times, max_num_steps, glitch_percent)
+
+if __name__ == '__main__':
+    main()

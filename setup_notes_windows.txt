@@ -1,0 +1,9 @@
+The setup on windows is tricky:
+* Installing python-sat
+  * pmsat-inference defines `python-sat[pblib,aiger]==0.1.7.dev21` as a requirement
+  * For windows, installing this dependency with Python3.11 fails, because the optional dependency `pblib` (aka `pypblib`) can't be built from source
+    * Pre-built wheels for windows for `pypblib` [exist on PyPI](https://pypi.org/project/pypblib/#files) for Python3.9, but not above
+      * Installing `pypblib` with pip, building the wheel from source (i.e. `pip install pypblib`) fails (on my machine)
+  * even removing pblib from the python-sat dependency fails, due to the (outdated) version of python-sat specified
+  * Installing python-sat without `pypblib` "as is" (i.e. the current version, via `pip install python-sat[aiger]`) works.
+    * This is what I currently do

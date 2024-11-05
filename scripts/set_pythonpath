@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+    PATH_SEPARATOR=";"
+else
+    PATH_SEPARATOR=":"
+fi
+
+export PYTHONPATH="./pmsat-inference$PATH_SEPARATOR./$PATH_SEPARATOR$PYTHONPATH"
+echo "(unix) PYTHONPATH set to $PYTHONPATH"
