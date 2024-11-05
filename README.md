@@ -46,3 +46,6 @@ Contains programs to evaluate the performance of the algorithm
   * Specify a maximum number of steps allowed in the SUL before aborting as failed learning attempt
   * Either specify a directory in which all .dot files will be learned, OR pass the same arguments as for [generate_automata.py](evaluation/generate_automata.py) to generate automata to fit your needs (and optionally re-use ones that were already generated)
   * Specify a results directory, in which results will be written. Each run of each algorithm currently writes one json file in this directory, immediately after the run finishes (enabling you to check out results while the program is still running).
+
+### [scripts/](scripts)
+* [run_apmsl_on_file_or_dir.py](scripts/run_apmsl_on_file_or_dir.py): Run the active PMSAT-inference algorithm on a given .dot file or on all .dot files in a given directory
