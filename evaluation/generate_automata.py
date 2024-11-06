@@ -1,6 +1,7 @@
 import sys
 import os
 import argparse
+import uuid
 from os import PathLike
 from typing import Literal, Any
 from itertools import takewhile
@@ -19,7 +20,7 @@ def generate_automaton_filename(automaton: Automaton, num_states: int, num_input
     assert len(automaton.states) == num_states
     assert len(automaton.get_input_alphabet()) == num_inputs
 
-    return f"{automaton_type}_{num_states}States_{num_inputs}Inputs_{num_outputs}Outputs_{hash(automaton)}"
+    return f"{automaton_type}_{num_states}States_{num_inputs}Inputs_{num_outputs}Outputs_{uuid.uuid4().hex}"
 
 
 def parse_automaton_filename(filename: str, print_error: bool = False) -> dict[str, str | int] | None:

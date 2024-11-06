@@ -79,14 +79,14 @@ class MaxStepsReached(Exception):
 class TracedMooreSUL(MooreSUL):
     def __init__(self, mm: MooreMachine) -> None:
         super().__init__(mm)
-        self.current_trace = [self.mm.step(None)]
+        self.current_trace = [self.automaton.step(None)]
         self.traces = [self.current_trace]
 
     def pre(self):
         super().pre()
-        assert self.mm.current_state == self.mm.initial_state
+        assert self.automaton.current_state == self.automaton.initial_state
         if len(self.current_trace) > 1:
-            new_trace = [self.mm.step(None)]
+            new_trace = [self.automaton.step(None)]
             self.traces.append(new_trace)
             self.current_trace = new_trace
 
@@ -149,14 +149,14 @@ class GlitchingSUL(SULWrapper):
 
         match self.fault_type:
             case "send_random_input":
-                assert len(alphabet := self.sul.mm.get_input_alphabet()) > 1
+                assert len(alphabet := self.sul.automaton.get_input_alphabet()) > 1
                 while (fault_input := random.choice(alphabet)) == input:
                     pass  # don't choose the same input as fault input, otherwise the actual glitch percentage drops
                 return self.sul.step(fault_input)
 
             case "enter_random_state":
-                assert len(states := self.sul.mm.states) > 1
-                while (fault_state := random.choice(states)) == self.sul.mm.current_state:
+                assert len(states := self.sul.automaton.states) > 1
+                while (fault_state := random.choice(states)) == self.sul.automaton.current_state:
                     pass
                 fault_output = fault_state.output
                 self.sul.current_state = fault_state

@@ -107,9 +107,9 @@ class PerfectMooreOracle(Oracle):
 class RandomWalkOracle(RandomWalkEqOracle):
     def __init__(self, sul: MooreSUL | MealySUL):
         super().__init__(
-            alphabet=sul.mm.get_input_alphabet(),
+            alphabet=sul.automaton.get_input_alphabet(),
             sul=sul,
-            num_steps=sul.mm.size * 15_000,
+            num_steps=sul.automaton.size * 15_000,
             reset_after_cex=True,
             reset_prob=0.25
         )
@@ -118,10 +118,10 @@ class RandomWalkOracle(RandomWalkEqOracle):
 class RandomWMethodOracle(RandomWMethodEqOracle):
     def __init__(self, sul: MooreSUL | MealySUL):
         super().__init__(
-            alphabet=sul.mm.get_input_alphabet(),
+            alphabet=sul.automaton.get_input_alphabet(),
             sul=sul,
-            walks_per_state=sul.mm.size * 5,
-            walk_len=sul.mm.size * 5
+            walks_per_state=sul.automaton.size * 5,
+            walk_len=sul.automaton.size * 5
         )
 
 
