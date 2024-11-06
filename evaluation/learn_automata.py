@@ -157,27 +157,35 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
 
     print(f"Running {algorithm_name} with keywords {algorithm.unique_keywords} and oracle {oracle_type}")
     try:
-        result, info = algorithm(alphabet=automaton.get_input_alphabet(), sul=sul, eq_oracle=oracle)
+        learned_model, info = algorithm(alphabet=automaton.get_input_alphabet(), sul=sul, eq_oracle=oracle)
         info["max_steps_reached"] = False
     except MaxStepsReached:
-        result = None
+        learned_model = None
         info = {"max_steps_reached": True}
     except Exception as e:
-        result = None
-        info = {'Exception': repr(e)}
+        learned_model = None
+        info = {'exception': repr(e)}
 
-    learned_correctly = check_equal(sul, result)
+    learned_correctly = check_equal(sul, learned_model)
     if not learned_correctly:
-        print(f"Warning! {algorithm_name} did not learn correctly!")
+        if learned_model:
+            print(f"{algorithm_name} did not learn correctly!")
+        else:
+            print(f"{algorithm_name} returned no learned model")
 
     info["start_time"] = start_time
     info["algorithm_name"] = algorithm_name
-    info["automaton_type"] = automaton_type
     info["oracle"] = oracle_type
     info["learned_correctly"] = learned_correctly
-    info["original_automaton"] = automaton_file
+
     info["max_num_steps"] = max_num_steps
     info["glitch_percent"] = glitch_percent
+
+    info["automaton_type"] = automaton_type
+    info["original_automaton"] = automaton_file
+    info["original_automaton_size"] = automaton.size
+    info["original_automaton_num_inputs"] = len(automaton.get_input_alphabet())
+    info["original_automaton_num_outputs"] = len(set(s.output for s in automaton.states))
 
     write_single_json_result(results_dir, automaton_file, info)
 

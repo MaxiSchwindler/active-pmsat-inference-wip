@@ -110,6 +110,7 @@ def run_activePmSATLearn(
         learning_rounds += 1
         log(f"Learning with passive pmSATLearn (round {learning_rounds}). "
             f"Learning a {num_states}-state automaton from {len(traces)} traces.", level=2)
+        detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
         hyp, hyp_stoc, pmsat_info = pmsat_learn.run(traces, num_states)
 
         #####################################
@@ -152,20 +153,20 @@ def run_activePmSATLearn(
 
                 log(f"Learning again after preprocessing with passive pmSATLearn (round {learning_rounds})...", level=2)
                 # TODO should this count as learning_round? we track the number of solver calls seperately
-                learning_rounds -= 1  # decrease before it is increased again at start of loop - this does not count as full round
+                #  however, this would also overwrite this rounds detailed_learning_info (i.e. "preprocessing_additional_traces") - would have to special case
                 continue  # jump back up and learn again
 
         #####################################
         #              EQ-CHECK             #
         #####################################
 
+        detailed_learning_info[learning_rounds]["num_states"] = len(hyp.states) if hyp is not None else None
+        detailed_learning_info[learning_rounds]["num_glitches"] = len(pmsat_info["glitch_steps"])
+        detailed_learning_info[learning_rounds]["is_sat"] = pmsat_info["is_sat"]
+        detailed_learning_info[learning_rounds]["timed_out"] = pmsat_info["timed_out"]
+
         if hyp is not None and pmsat_info["is_sat"]:
             log(f"pmSATLearn learned hypothesis with {len(hyp.states)} states", level=1)
-
-            detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
-            detailed_learning_info[learning_rounds]["num_states"] = len(hyp.states)  # TODO: see TODO in num_states calculation at bottom
-            detailed_learning_info[learning_rounds]["num_glitches"] = len(pmsat_info["glitch_steps"])
-            detailed_learning_info[learning_rounds]["is_sat"] = True
 
             if not hyp.is_input_complete():
                 hyp.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
@@ -178,7 +179,6 @@ def run_activePmSATLearn(
             cex = None
             hyp = None
             hyp_stoc = None
-            detailed_learning_info[learning_rounds]["is_sat"] = False
 
         if cex is None:
             if pmsat_info["is_sat"]:
@@ -280,16 +280,32 @@ def run_activePmSATLearn(
                 f"run pmSATLearn again with the same number of states ({num_states}) if possible.", level=2)
 
         if num_states > num_outputs + additional_states_threshold:
-            raise ValueError(f"Number of states is much larger than number of outputs")
+            log(f"Next number of states ({num_states}) is much larger than number of outputs ({num_outputs}) plus "
+                f"threashold ({additional_states_threshold}). Aborting.", level=1)
+
+            if return_data:
+                total_time = round(time.time() - start_time, 2)
+                eq_query_time = round(eq_query_time, 2)
+                learning_time = round(total_time - eq_query_time, 2)
+
+                active_info = build_info_dict(None, sul, eq_oracle, pmsat_learn, learning_rounds, total_time,
+                                              learning_time, eq_query_time, {}, detailed_learning_info, None,
+                                              "too_many_states")
+                log(active_info, level=2)
+
+                return hyp, active_info
+            else:
+                return hyp
 
         num_states_before_receiving_cex[cex_as_tuple] = num_states
 
 
 def build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time, eq_query_time,
-                    last_pmsat_info, detailed_learning_info, hyp_stoc):
+                    last_pmsat_info, detailed_learning_info, hyp_stoc, abort_reason=None):
+    assert learning_rounds == pmsat_learn.num_calls_to_pmsat_learn
     active_info = {
         'learning_rounds': learning_rounds,
-        'automaton_size': hyp.size if hyp is not None else None,
+        'learned_automaton_size': hyp.size if hyp is not None else None,
         'queries_learning': sul.num_queries,
         'steps_learning': sul.num_steps,
         'queries_eq_oracle': eq_oracle.num_queries,
@@ -301,6 +317,7 @@ def build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_tim
         'last_pmsat_info': last_pmsat_info,
         'solver_calls': pmsat_learn.num_calls_to_pmsat_learn,
         'detailed_learning_info': detailed_learning_info,
-        'hyp_stoc': str(hyp_stoc),
+        'hyp_stoc': str(hyp_stoc) if hyp is not None else None,
+        'abort_reason': abort_reason,
     }
     return active_info
