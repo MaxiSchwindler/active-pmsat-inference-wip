@@ -66,7 +66,7 @@ for alg in algorithms.values():
 
 class PerfectMooreOracle(Oracle):
     def __init__(self, sul: MooreSUL):
-        alphabet = sul.mm.get_input_alphabet()
+        alphabet = sul.automaton.get_input_alphabet()
         super().__init__(alphabet, sul)
 
     def find_cex(self, hypothesis):
@@ -84,7 +84,7 @@ class PerfectMooreOracle(Oracle):
         """
         self.reset_hyp_and_sul(hypothesis)
         # print(hypothesis)
-        mm = self.sul.mm  # mm: MooreMachine = copy.deepcopy(self.sul.mm)
+        mm = self.sul.automaton  # mm: MooreMachine = copy.deepcopy(self.sul.mm)
         assert set(mm.get_input_alphabet()) == set(
             self.alphabet
         ), f"{mm.get_input_alphabet()} != {self.alphabet}"
