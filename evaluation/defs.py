@@ -83,16 +83,14 @@ class PerfectMooreOracle(Oracle):
             tuple or list containing counterexample inputs, None if no counterexample is found
         """
         self.reset_hyp_and_sul(hypothesis)
-        # print(hypothesis)
-        mm = self.sul.automaton  # mm: MooreMachine = copy.deepcopy(self.sul.mm)
+        mm = self.sul.automaton
         assert set(mm.get_input_alphabet()) == set(
             self.alphabet
         ), f"{mm.get_input_alphabet()} != {self.alphabet}"
-        dis = mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state)
+        dis = mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state, self.alphabet)
         if dis is None:
             return None  # no CEX found
-        # print("Found cex:", dis)
-        # return dis
+
         assert self.sul.step(None) == hypothesis.step(None)
         for index, inp in enumerate(dis):
             out1 = self.sul.step(inp)
