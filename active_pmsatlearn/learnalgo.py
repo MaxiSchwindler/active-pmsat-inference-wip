@@ -50,7 +50,7 @@ def run_activePmSATLearn(
     return_data: bool = True,
     print_level: int | None = 2,
 ) -> (
-        SupportedAutomaton | tuple[SupportedAutomaton, dict[str, Any]]
+        SupportedAutomaton | None | tuple[SupportedAutomaton | None, dict[str, Any]]
 ):
     """
     Active version of the PMSAT-LEARN algorithm.
@@ -293,9 +293,9 @@ def run_activePmSATLearn(
                                               "too_many_states")
                 log(active_info, level=2)
 
-                return hyp, active_info
+                return None, active_info
             else:
-                return hyp
+                return None
 
         num_states_before_receiving_cex[cex_as_tuple] = num_states
 
