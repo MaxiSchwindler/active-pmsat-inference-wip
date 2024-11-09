@@ -86,6 +86,17 @@ def run_activePmSATLearn(
 
     all_input_combinations = list(itertools.product(alphabet, repeat=extension_length))
 
+    def do_input_completeness_processing(current_hyp):
+        return _do_input_completeness_processing(hyp=current_hyp, sul=sul, alphabet=alphabet,
+                                                 all_input_combinations=all_input_combinations, log=log)
+
+    def do_cex_processing(current_cex):
+        return _do_cex_processing(sul=sul, cex=current_cex, all_input_combinations=all_input_combinations, log=log)
+
+    def do_glitch_processing(current_pmsat_info: dict[str, Any], current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
+        return _do_glitch_processing(sul=sul, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
+                                     traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations, log=log)
+
     log(f"Creating initial traces...", level=2)
     traces = []
     for input_combination in all_input_combinations:
@@ -118,42 +129,23 @@ def run_activePmSATLearn(
         #####################################
 
         if hyp is not None and input_completeness_processing:
-            # visit every state in the hypothesis and check if we have a transition for every input
-            # if we don't have a transition there, add additional traces of state.prefix + input + (inp_alph ^ ext_len)
-            log("Try to force input completeness in hypothesis to produce new traces...", level=2)
-            if hyp.is_input_complete():
-                log("Hypothesis is already input complete. In the current implementation, this step won't be useful.", level=2)
+            preprocessing_additional_traces = do_input_completeness_processing(hyp)
 
-            hyp.compute_prefixes()
-            preprocessing_additional_traces = []
-            for state in hyp.states:
-                if state.prefix is None:
-                    continue  # ignore unreachable states (reachable only through glitches)
+            # TODO for now, we only add _new_ traces, to avoid huge number of traces
+            #      however, having the same trace multiple times (or weighting it)
+            #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
+            #      to be a glitch) in Partial MaxSAT
+            remove_duplicate_traces(traces, preprocessing_additional_traces)
 
-                for inp in alphabet:
-                    if inp not in state.transitions:
-                        log(f"Hypothesis didn't have a transition from state {state.state_id} "
-                            f"(output='{state.output}', prefix={state.prefix}) with input '{inp}' - create traces!", level=2)
-
-                        for suffix in all_input_combinations:
-                            trace = trace_query(sul, list(state.prefix) + [inp] + list(suffix))
-                            if trace not in traces:
-                                # TODO for now, we only add _new_ traces, to avoid huge number of traces
-                                #      however, having the same trace multiple times (or weighting it)
-                                #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
-                                #      to be a glitch) in Partial MaxSAT
-                                preprocessing_additional_traces.append(trace)
+            log(f"Produced {len(preprocessing_additional_traces)} additional traces from counterexample", level=2)
+            detailed_learning_info[learning_rounds]["preprocessing_additional_traces"] = len(preprocessing_additional_traces)
 
             if preprocessing_additional_traces:
+                log(f"Learning again after preprocessing with passive pmSATLearn (round {learning_rounds})...", level=2)
                 traces = traces + preprocessing_additional_traces
                 num_states = max(num_states, get_num_outputs(traces))
-
-                log(f"Produced {len(preprocessing_additional_traces)} additional traces from counterexample", level=2)
-                detailed_learning_info[learning_rounds]["preprocessing_additional_traces"] = len(preprocessing_additional_traces)
-
-                log(f"Learning again after preprocessing with passive pmSATLearn (round {learning_rounds})...", level=2)
                 # TODO should this count as learning_round? we track the number of solver calls seperately
-                #  however, this would also overwrite this rounds detailed_learning_info (i.e. "preprocessing_additional_traces") - would have to special case
+                #  however, this would also overwrite this rounds detailed_learning_info (i.e. "preprocessing_additional_traces") - would needa a special case
                 continue  # jump back up and learn again
 
         #####################################
@@ -205,54 +197,36 @@ def run_activePmSATLearn(
 
         log("Counterexample found - process and continue learning", level=1)
 
-        if cex_processing:
-            # use counterexample, same as ActiveRPNI
-            log("Processing counterexample to produce new traces...", level=2)
-            postprocessing_additional_traces_cex = []
-            for prefix in get_prefixes(cex):
-                for suffix in all_input_combinations:
-                    trace = trace_query(sul, list(prefix) + list(suffix))
-                    if trace not in traces:
-                        # TODO for now, we only add _new_ traces, to avoid huge number of traces
-                        #      however, having the same trace multiple times (or weighting it)
-                        #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
-                        #      to be a glitch) in Partial MaxSAT
-                     postprocessing_additional_traces_cex.append(trace)
-
-            log(f"Produced {len(postprocessing_additional_traces_cex)} additional traces from counterexample", level=2)
-            log(f"Additional traces from counterexample: {postprocessing_additional_traces_cex}", level=3)
-            detailed_learning_info[learning_rounds]["postprocessing_additional_traces_cex"] = len(postprocessing_additional_traces_cex)
-
-            traces = traces + postprocessing_additional_traces_cex
-
         if glitch_processing:
-            # look at glitches:
-            # for every glitched transition from state s with input i, add traces for s.prefix + i + (inp_alph ^ ext_len)
-            log("Use glitched transitions to produce new traces...", level=2)
-            hyp_stoc.compute_prefixes()
-            postprocessing_additional_traces_glitch = []
-            all_glitched_steps = [traces[traces_index][trace_index] for (traces_index, trace_index) in pmsat_info["glitch_steps"]]
-            for state in hyp_stoc.states:
-                for inp, next_state in state.transitions.items():
-                    if inp.startswith("!"):  # glitched transition
-                        state_prefix = [get_input_from_stoc_trans(i) for i in state.prefix]
-                        glitched_input = get_input_from_stoc_trans(inp)
-                        assert (glitched_input, next_state.output) in all_glitched_steps, (f"The tuple {(glitched_input, next_state.output)}"
-                                                                                           f"was not found in {all_glitched_steps=}")
-                        log(f"Hypothesis contained a glitched transition from state {state.state_id} (output='{state.output}', "
-                            f"prefix={state_prefix}) with input '{glitched_input}' to state {next_state.state_id} - create traces!", level=2)
+            # we have to do glitch processing first, before appending anything to traces!
+            postprocessing_additional_traces_glitch = do_glitch_processing(pmsat_info, hyp_stoc, traces)
 
-                        for suffix in all_input_combinations:
-                            trace = trace_query(sul, state_prefix + [glitched_input] + list(suffix))
-                            if trace not in traces:
-                                # only add traces we don't already have - TODO does this make a difference for the solver? (*max* sat - if multiple times in it, more important. Maybe mark as hard clause? maybe weight somehow?)
-                                postprocessing_additional_traces_glitch.append(trace)
+            # TODO for now, we only add _new_ traces, to avoid huge number of traces
+            #      however, having the same trace multiple times (or weighting it)
+            #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
+            #      to be a glitch) in Partial MaxSAT
+            remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)
 
             log(f"Produced {len(postprocessing_additional_traces_glitch)} additional traces from glitch processing", level=2)
             log(f"Additional traces from glitch processing: {postprocessing_additional_traces_glitch}", level=3)
             detailed_learning_info[learning_rounds]["postprocessing_additional_traces_glitch"] = len(postprocessing_additional_traces_glitch)
 
             traces = traces + postprocessing_additional_traces_glitch
+
+        if cex_processing:
+            postprocessing_additional_traces_cex = do_cex_processing(cex)
+
+            # TODO for now, we only add _new_ traces, to avoid huge number of traces
+            #      however, having the same trace multiple times (or weighting it)
+            #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
+            #      to be a glitch) in Partial MaxSAT
+            remove_duplicate_traces(traces, postprocessing_additional_traces_cex)
+
+            log(f"Produced {len(postprocessing_additional_traces_cex)} additional traces from counterexample", level=2)
+            log(f"Additional traces from counterexample: {postprocessing_additional_traces_cex}", level=3)
+            detailed_learning_info[learning_rounds]["postprocessing_additional_traces_cex"] = len(postprocessing_additional_traces_cex)
+
+            traces = traces + postprocessing_additional_traces_cex
 
         #####################################
         #          CALC NUM_STATES          #
@@ -298,6 +272,99 @@ def run_activePmSATLearn(
                 return None
 
         num_states_before_receiving_cex[cex_as_tuple] = num_states
+
+
+def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
+                                      all_input_combinations: list[tuple[Input, ...]], log=log_all) -> list[Trace]:
+    """
+    Visit every state in the hypothesis and check if we have a transition for every input.
+    If we don't have a transition there, query the SUL for additional traces of
+    (state.prefix + input + (alphabet^extension_length)
+    :param hyp: current hypothesis
+    :param sul: system under learning
+    :param alphabet: input alphabet
+    :param all_input_combinations: all combinations of length <extension length> of the input alphabet
+    :param log: a function to log info to
+    :return: a list of additional traces
+    """
+    log("Try to force input completeness in hypothesis to produce new traces...", level=2)
+    if hyp.is_input_complete():
+        log("Hypothesis is already input complete. In the current implementation, this step won't be useful.", level=2)
+
+    hyp.compute_prefixes()
+    new_traces = []
+    for state in hyp.states:
+        if state.prefix is None:
+            continue  # ignore unreachable states (reachable only through glitches)
+
+        for inp in alphabet:
+            if inp not in state.transitions:
+                log(f"Hypothesis didn't have a transition from state {state.state_id} "
+                    f"(output='{state.output}', prefix={state.prefix}) with input '{inp}' - create traces!", level=2)
+
+                for suffix in all_input_combinations:
+                    trace = trace_query(sul, list(state.prefix) + [inp] + list(suffix))
+                    new_traces.append(trace)
+
+    return new_traces
+
+
+def _do_cex_processing(sul: SupportedSUL, cex: Trace, all_input_combinations: list[tuple[Input, ...]], log=log_all) -> list[Trace]:
+    """
+    Counterexample processing, like in Active RPNI
+    :param sul: system under learning
+    :param cex: counterexample
+    :param all_input_combinations: all combinations of length <extension length> of the input alphabet
+    :param log: a function to log info to
+    :return: list of new traces
+    """
+    log("Processing counterexample to produce new traces...", level=2)
+    new_traces = []
+    for prefix in get_prefixes(cex):
+        for suffix in all_input_combinations:
+            trace = trace_query(sul, list(prefix) + list(suffix))
+            new_traces.append(trace)
+
+    return new_traces
+
+
+def _do_glitch_processing(sul: SupportedSUL, pmsat_info: dict[str, Any], hyp_stoc: SupportedAutomaton,
+                         traces_used_to_learn_hyp: list[Trace], all_input_combinations: list[tuple[Input, ...]],
+                         log=log_all) -> list[Trace]:
+    """
+    Glitch processing. For every glitched transition from state s with input i, query traces for
+    s.prefix + i + (alphabet^extension_length). Note that only one prefix is queried, the one of the state with
+    the glitched transition.
+    This is currently a somewhat hacky implementation, relying on hyp_stoc. TODO: replay on hyp instead
+    :param sul: system under learning
+    :param pmsat_info: info dict returned from last pmsat_learn call
+    :param hyp_stoc: stochastic hypothesis returned from last pmsat_learn call
+    :param all_input_combinations: all combinations of length <extension length> of the input alphabet
+    :param log: a function to log info to
+    :return: list of new traces
+    """
+    log("Use glitched transitions to produce new traces...", level=2)
+    hyp_stoc.compute_prefixes()
+    new_traces = []
+    all_glitched_steps = [traces_used_to_learn_hyp[traces_index][trace_index] for (traces_index, trace_index) in
+                          pmsat_info["glitch_steps"]]
+
+    for state in hyp_stoc.states:
+        for inp, next_state in state.transitions.items():
+            if inp.startswith("!"):  # glitched transition
+                state_prefix = [get_input_from_stoc_trans(i) for i in state.prefix]
+                glitched_input = get_input_from_stoc_trans(inp)
+                assert (glitched_input, next_state.output) in all_glitched_steps, (f"The tuple {(glitched_input, next_state.output)}" 
+                                                                                   f"was not found in {all_glitched_steps=}")
+                log(f"Hypothesis contained a glitched transition from state {state.state_id} (output='{state.output}', "
+                    f"prefix={state_prefix}) with input '{glitched_input}' to state {next_state.state_id} - create traces!",
+                    level=2)
+
+                for suffix in all_input_combinations:
+                    trace = trace_query(sul, state_prefix + [glitched_input] + list(suffix))
+                    new_traces.append(trace)
+
+    return new_traces
 
 
 def build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time, eq_query_time,
