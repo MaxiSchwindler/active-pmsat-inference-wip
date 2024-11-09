@@ -8,6 +8,7 @@ from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.automata import MooreMachine, MealyMachine
 from aalpy.base import Oracle
 
+from active_pmsatlearn.NondeterministicMooreMachine import hyp_stoc_to_nondet_mm
 from pmsatlearn import run_pmSATLearn
 
 from active_pmsatlearn.utils import *
@@ -26,6 +27,11 @@ class PmSATLearn:
         self.log = logging_func
         self.max_calls_per_round = max_calls_per_round
 
+    @staticmethod
+    def get_glitch_percentage(traces, num_glitches):
+        complete_num_steps = sum(len(trace) for trace in traces)
+        return num_glitches / complete_num_steps * 100
+
     def run_once(self, traces: Sequence[Trace], num_states: int):
         self.num_calls_to_pmsat_learn += 1
         self.log(f"Running pmSATLearn to learn a {num_states}-state automaton from {len(traces)} traces "
@@ -39,10 +45,12 @@ class PmSATLearn:
                                              print_info=self.print_info)
         if hyp:
             info['num_glitches'] = len(info['glitch_steps'])
-            self.log(f"pmSATLearn learned a hypothesis with {info['num_glitches']} glitches.", level=2)
+            info['num_glitches_percent'] = self.get_glitch_percentage(traces, info['num_glitches'])
+            self.log(f"pmSATLearn learned a hypothesis with {info['num_glitches']} glitches ({info['num_glitches_percent']:.2f}%)", level=2)
         else:
             self.log(f"pmSATLearn could not learn a hypothesis.", level=2)
             info['num_glitches'] = math.inf
+            info['num_glitches_percent'] = 100
 
         return hyp, hyp_stoc, info
 
@@ -59,20 +67,23 @@ class PmSATLearn:
         def num_states_generator():
             if initial_num_states != min_states:
                 yield initial_num_states
-            yield from range(min_states, max_states+1)
+
+            for s in range(min_states, max_states+1):
+                if initial_num_states != min_states and s == initial_num_states:
+                    continue
+                yield s
 
         best_solution = None
         least_glitches = math.inf
-        complete_num_steps = sum(len(trace) for trace in traces)
 
         self.log(f"Running pmSATLearn to try and find a solution with less than {target_glitch_percentage}% glitches", level=1)
         for num_states in num_states_generator():
             solution = self.run_once(traces, num_states)
             num_glitches = len(solution[2]["glitch_steps"])
-            percentage = num_glitches / complete_num_steps * 100
+            percentage = self.get_glitch_percentage(traces, num_glitches)
 
             if percentage <= target_glitch_percentage:
-                self.log(f"Found {num_states}-state solution with {percentage}% glitches!", level=1)
+                self.log(f"Found {num_states}-state solution with {percentage:.2f}% glitches!", level=1)
                 return solution
 
             if num_glitches < least_glitches:
@@ -80,7 +91,7 @@ class PmSATLearn:
                 best_solution = solution
 
         self.log(f"After {num_states-initial_num_states} calls with num_states ranging from {initial_num_states} to {num_states}, "
-                 f"no solution with less than {least_glitches / complete_num_steps * 100}% glitches was found. "
+                 f"no solution with less than {self.get_glitch_percentage(traces, least_glitches):.2f}% glitches was found. "
                  f"Returning solution with least glitches.", level=1)
         return best_solution
 
@@ -120,8 +131,6 @@ def run_activePmSATLearn(
                                           before querying the oracle for a counterexample
     :param cex_processing: whether counterexample processing should be performed
     :param glitch_processing: whether glitch processing should be performed
-    :param additional_states_threshold: how many additional states more than the number of outputs
-                                        in the traces are allowed.
     :param return_data: whether to return a dictionary containing learning information
     :param print_level: 0 - None,
                         1 - just results,
@@ -175,7 +184,7 @@ def run_activePmSATLearn(
         hyp, hyp_stoc, pmsat_info = pmsat_learn.run_multiple(traces=traces,
                                                              min_states=min_states,
                                                              max_states=max_states,
-                                                             initial_num_states=len(hyp.states) if hyp is not None else None,
+                                                             initial_num_states=len(hyp.states) - 2 if hyp is not None else None,
                                                              target_glitch_percentage=allowed_glitch_percentage)
 
         #####################################
@@ -213,12 +222,15 @@ def run_activePmSATLearn(
         if hyp is not None and pmsat_info["is_sat"]:
             log(f"pmSATLearn learned hypothesis with {len(hyp.states)} states", level=1)
 
-            if not hyp.is_input_complete():
-                hyp.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
+            nondet_hyp_with_glitches = hyp_stoc_to_nondet_mm(hyp_stoc)
+
+            if not nondet_hyp_with_glitches.is_input_complete():
+                nondet_hyp_with_glitches.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
 
             eq_query_start = time.time()
-            cex = eq_oracle.find_cex(hyp)
+            cex = eq_oracle.find_cex(nondet_hyp_with_glitches)  # TODO maybe collect multiple counterexamples?
             eq_query_time += time.time() - eq_query_start
+
         else:
             # UNSAT - set cex to None to enter next if
             cex = None
@@ -248,7 +260,7 @@ def run_activePmSATLearn(
         #          POST-PROCESSING          #
         #####################################
 
-        log("Counterexample found - process and continue learning", level=1)
+        log(f"Counterexample {cex} found - process and continue learning", level=1)
 
         if glitch_processing:
             # we have to do glitch processing first, before appending anything to traces!

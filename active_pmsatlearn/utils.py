@@ -42,8 +42,18 @@ def trace_query(sul: SUL, inputs: Sequence[Input]) -> Trace:
 
 def get_input_from_stoc_trans(inp: str):
     if inp.startswith("!"):
-        return inp.split("!")[-1].split("[")[0].strip()
-    return inp.split(" ")[0]
+        r = inp.split("!")[-1].split("[")[0].strip()
+    else:
+        r = inp.split(" ")[0]
+
+    try:
+        r_i = int(r)
+    except ValueError:
+        pass
+    else:
+        raise ValueError(f"Input '{r}' (hyp_stoc: {inp}) could have been a string or an integer originally!")
+
+    return r
 
 
 def timeit(name=None):

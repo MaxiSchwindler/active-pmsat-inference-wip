@@ -8,11 +8,12 @@ from aalpy.utils import load_automaton_from_file
 
 from active_pmsatlearn import run_activePmSATLearn
 from evaluation.defs import oracles
+from evaluation.learn_automata import setup_sul
 
 
-def get_sul_from_file(file: str):
+def get_sul_from_file(file: str, glitch_percent: float = 0):
     mm = load_automaton_from_file(file, "moore")
-    return MooreSUL(mm)
+    return setup_sul(mm, glitch_percent=glitch_percent)
 
 
 def get_oracle(oracle_name: str, sul):
@@ -21,8 +22,8 @@ def get_oracle(oracle_name: str, sul):
 
 def main():
     args = sys.argv[1:]
-    if len(args) != 1:
-        print("USAGE: python run_apmsl_on_file_or_dir.py FILE_OR_DIR")
+    if len(args) not in (1, 2):
+        print("USAGE: python run_apmsl_on_file_or_dir.py FILE_OR_DIR [GLITCH_PERCENT]")
         exit(1)
 
     file_or_dir = args[0]
@@ -40,8 +41,10 @@ def main():
             print(f"{file_or_dir} is not a .dot file")
         exit(3)
 
+    glitch_percent = float(args[1]) if len(args) > 1 else 0.0
+
     for file in dot_files:
-        sul = get_sul_from_file(file)
+        sul = get_sul_from_file(file, glitch_percent)
         oracle = get_oracle("Perfect", sul)
 
         print(f"Learning {file}...")

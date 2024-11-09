@@ -40,7 +40,7 @@ def get_generated_automata_files_to_learn(num_automata_per_combination: int, aut
                                                                                  current_num_states,
                                                                                  current_num_inputs,
                                                                                  current_num_outputs)
-                        files.extend(matching_automata)
+                        files.extend(matching_automata[:num_automata_per_combination])
                         missing = num_automata_per_combination - len(matching_automata)
                     else:
                         missing = num_automata_per_combination
@@ -70,7 +70,7 @@ def setup_sul(automaton: MealyMachine | MooreMachine, max_num_steps: int | None 
         sul = MaxStepsSUL(sul, max_num_steps)
 
     if glitch_percent:
-        sul = GlitchingSUL(sul, glitch_percent, 'discard')
+        sul = GlitchingSUL(sul, glitch_percent)
 
     return sul
 
@@ -78,6 +78,9 @@ def setup_sul(automaton: MealyMachine | MooreMachine, max_num_steps: int | None 
 def check_equal(sul: MooreSUL, learned_mm: MooreMachine):
     if learned_mm is None:
         return False
+    if isinstance(sul, GlitchingSUL):
+        # For the equality check, don't have the glitches
+        sul = sul.sul
     perfect_oracle = PerfectMooreOracle(sul)
     cex = perfect_oracle.find_cex(learned_mm)
     return True if cex is None else False
@@ -199,7 +202,7 @@ def print_results_info(results: list[dict]):
 
     if glitch_percent:
         print(f"Glitch percentage: {glitch_percent}%")
-        print("Fault type: 'discard'")
+        print("Fault type: 'nondeterminism_on_transitions'")
         sep()
 
     exceptions = [r['exception'] for r in results if "exception" in r]
@@ -249,7 +252,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     algorithm = algorithms[algorithm_name]
     start_time = time.time()
 
-    print(f"Running {algorithm_name} with keywords {algorithm.unique_keywords} and oracle {oracle_type}")
+    print(f"Running {algorithm_name} with keywords {algorithm.unique_keywords} and oracle '{oracle_type}'")
     try:
         learned_model, info = algorithm(alphabet=automaton.get_input_alphabet(), sul=sul, eq_oracle=oracle, print_level=print_level)
         info["max_steps_reached"] = False
@@ -285,7 +288,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
 
     write_single_json_result(results_dir, automaton_file, info)
 
-    print(f"Finished learning {algorithm_name}")
+    print(f"Finished {algorithm_name} with keywords {algorithm.unique_keywords} and oracle '{oracle_type}'")
     return info
 
 
