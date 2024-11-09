@@ -134,7 +134,7 @@ def add_automata_generation_arguments(parser: argparse.ArgumentParser, learn=Fal
                              f'num times for every combination of num_states/num_inputs/num_outputs, '
                              f'for a maximum of (num * num_states * num_inputs * num_outputs) '
                              f'automata. Invalid combinations (more outputs than possible) are ignored.')
-    parser.add_argument('-t', '--type', type=str, choices=SUPPORTED_AUTOMATA_TYPES, required=True,
+    parser.add_argument('-t', '--type', type=str, choices=SUPPORTED_AUTOMATA_TYPES, default='moore',
                         help=f'Type of automata to {"generate" if not learn else "learn"}')
     parser.add_argument('-ns', '--num_states', type=parse_range, required=True,
                         help='Number of states per automaton. Can be either a single number or a range (e.g. 1-10)')

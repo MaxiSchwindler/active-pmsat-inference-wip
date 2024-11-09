@@ -125,7 +125,11 @@ def write_results_info(results_dir, automata_type, automata_files, algorithm_nam
 
 def write_single_json_result(results_dir, automaton_file, info):
     now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    with open(os.path.join(results_dir, f"{now}_learning_results_{os.path.basename(automaton_file)}_{info['algorithm_name']}_{uuid.uuid4().hex[:8]}.json"), "w") as f:
+    alg_name = info['algorithm_name']
+    alg_name = alg_name.replace(" ", "_")
+    alg_name = alg_name.replace("*", "star")
+
+    with open(os.path.join(results_dir, f"{now}_learning_results_{os.path.basename(automaton_file)}_{alg_name}_{uuid.uuid4().hex[:8]}.json"), "w") as f:
         json.dump(info, f, indent=4)
 
 
@@ -147,6 +151,96 @@ def write_results_to_csv(results: list[dict], results_file: str):
         writer.writerows(results)
 
 
+def print_results_info(results: list[dict]):
+    def sep():
+        print("-" * 40)
+
+    algorithms = list(set([entry["algorithm_name"] for entry in results]))
+    valid_results = [entry for entry in results if "exception" not in entry]
+
+    sep()
+    print("RESULTS:")
+    sep()
+    print(f"Algorithms: {algorithms}")
+    print(f"Oracles: {list(set(r['oracle'] for r in results))}")
+    sep()
+
+    num_results = len(results)
+    num_valid = len(valid_results)
+    num_learned = sum(r['learned_correctly'] for r in results)
+    num_aborted = sum(r.get('abort_reason', None) is not None for r in valid_results)
+    abort_reasons = set(r['abort_reason'] for r in valid_results if 'abort_reason' in r)
+
+    print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
+    print(f"Learned correctly: {num_learned} of {num_results} ({num_learned / num_results * 100:.2f}%)")
+    if num_aborted:
+        print(f"Aborted: {num_aborted} of {num_results} ({num_aborted / num_results * 100:.2f}%)")
+    for reason in abort_reasons:
+        print(f"\tAbort reason '{reason}' occurred {sum(r['abort_reason'] == reason for r in valid_results)} times")
+    sep()
+
+    num_automata = len(set(r['original_automaton'] for r in results))
+    min_num_states = min(r['original_automaton_size'] for r in results)
+    max_num_states = max(r['original_automaton_size'] for r in results)
+    min_num_inputs = min(r['original_automaton_num_inputs'] for r in results)
+    max_num_inputs = max(r['original_automaton_num_inputs'] for r in results)
+    min_num_outputs = min(r['original_automaton_num_outputs'] for r in results)
+    max_num_outputs = max(r['original_automaton_num_outputs'] for r in results)
+
+    print(f"Unique automata: {num_automata}")
+    print(f"Number of states per automaton: {min_num_states} to {max_num_states}")
+    print(f"Number of inputs per automaton: {min_num_inputs} to {max_num_inputs}")
+    print(f"Number of outputs per automaton: {min_num_outputs} to {max_num_outputs}")
+    sep()
+
+    glitch_percent = set(r.get('glitch_percent', None) for r in results)
+    assert len(glitch_percent) == 1
+    glitch_percent = list(glitch_percent)[0]
+
+    if glitch_percent:
+        print(f"Glitch percentage: {glitch_percent}%")
+        print("Fault type: 'discard'")
+        sep()
+
+    exceptions = [r['exception'] for r in results if "exception" in r]
+    unique_exceptions = list(set(exceptions))
+    num_exceptions = len(exceptions)
+
+    if num_exceptions:
+        print(f"Exceptions: {num_exceptions}")
+        print(f"Unique exceptions: {len(unique_exceptions)}")
+
+    for e in unique_exceptions:
+        print("\t", e)
+        num_times = exceptions.count(e)
+        perc_of_exc = num_times / num_exceptions * 100
+        perc_of_runs = num_times / num_results * 100
+        unique_automata = list(set(r['original_automaton'] for r in results if r.get('exception', None) == e))
+        unique_algorithms = list(set(r['algorithm_name'] for r in results if r.get('exception', None) == e))
+
+        print("\t\t",
+              f"occurred {num_times} times ({perc_of_exc:.2f}% of all exceptions / {perc_of_runs:.2f}% of all runs)")
+        print("\t\t", f"occurred in {len(unique_automata)} unique automata (", end="")
+
+        every_time = []
+        for a in unique_automata:
+            runs_with_a = sum(1 for r in results if r['original_automaton'] == a)
+            runs_with_a_and_e = sum(
+                1 for r in results if (r['original_automaton'] == a) and (r.get('exception', None) == e))
+            print(f"{runs_with_a_and_e}/{runs_with_a}", end="")
+            if a != unique_automata[-1]:
+                print(", ", end="")
+            else:
+                print(')')
+            if runs_with_a == runs_with_a_and_e:
+                every_time.append(a)
+
+        for a in every_time:
+            print("\t\t\t", f"occurred every time with {a}")
+
+        print("\t\t", f"occurred in {len(unique_algorithms)} unique algorithms: {unique_algorithms}")
+
+
 def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: str, oracle_type: str, results_dir: str,
                     max_num_steps: int | None = None, glitch_percent: float = 0.0) -> dict[str, Any]:
     automaton = load_automaton_from_file(automaton_file, automaton_type)
@@ -165,6 +259,8 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     except Exception as e:
         learned_model = None
         info = {'exception': repr(e)}
+        import traceback
+        print("Warning: Unknown exception during algorithm call:\n", traceback.format_exc())
 
     learned_correctly = check_equal(sul, learned_model)
     if not learned_correctly:
@@ -222,6 +318,7 @@ def learn_automata(automata_type: str, automata_files: list[str],
 
     futures = pool.map(learn_automaton_wrapper, all_combinations_n_times)
     results = [f for f in futures.result()]
+    print_results_info(results)
 
 
 def main():

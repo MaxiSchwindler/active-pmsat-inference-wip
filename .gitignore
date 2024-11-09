@@ -61,6 +61,7 @@ ENV/
 env.bak/
 venv.bak/
 wslvenv/
+venv2/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
@@ -71,3 +72,6 @@ wslvenv/
 
 # Generated automata
 **/generated_automata/
+
+# Learning results (for now)
+**/learning_results*/
