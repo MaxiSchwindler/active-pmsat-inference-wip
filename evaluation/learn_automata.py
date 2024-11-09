@@ -169,14 +169,14 @@ def print_results_info(results: list[dict]):
     num_valid = len(valid_results)
     num_learned = sum(r['learned_correctly'] for r in results)
     num_aborted = sum(r.get('abort_reason', None) is not None for r in valid_results)
-    abort_reasons = set(r['abort_reason'] for r in valid_results if 'abort_reason' in r)
+    abort_reasons = set(r['abort_reason'] for r in valid_results if r.get('abort_reason', None) is not None)
 
     print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
     print(f"Learned correctly: {num_learned} of {num_results} ({num_learned / num_results * 100:.2f}%)")
     if num_aborted:
         print(f"Aborted: {num_aborted} of {num_results} ({num_aborted / num_results * 100:.2f}%)")
     for reason in abort_reasons:
-        print(f"\tAbort reason '{reason}' occurred {sum(r['abort_reason'] == reason for r in valid_results)} times")
+        print(f"\tAbort reason '{reason}' occurred {sum(r.get('abort_reason', None) == reason for r in valid_results)} times")
     sep()
 
     num_automata = len(set(r['original_automaton'] for r in results))
@@ -242,7 +242,7 @@ def print_results_info(results: list[dict]):
 
 
 def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: str, oracle_type: str, results_dir: str,
-                    max_num_steps: int | None = None, glitch_percent: float = 0.0) -> dict[str, Any]:
+                    max_num_steps: int | None = None, glitch_percent: float = 0.0, print_level: int = 0) -> dict[str, Any]:
     automaton = load_automaton_from_file(automaton_file, automaton_type)
     sul = setup_sul(automaton, max_num_steps, glitch_percent)
     oracle = oracles[oracle_type](sul)
@@ -251,7 +251,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
 
     print(f"Running {algorithm_name} with keywords {algorithm.unique_keywords} and oracle {oracle_type}")
     try:
-        learned_model, info = algorithm(alphabet=automaton.get_input_alphabet(), sul=sul, eq_oracle=oracle)
+        learned_model, info = algorithm(alphabet=automaton.get_input_alphabet(), sul=sul, eq_oracle=oracle, print_level=print_level)
         info["max_steps_reached"] = False
     except MaxStepsReached:
         learned_model = None
@@ -297,9 +297,9 @@ def learn_automaton_wrapper(args: tuple):
 def learn_automata(automata_type: str, automata_files: list[str],
                    algorithm_names: Sequence[str], oracle_types: Sequence[str], results_dir: str,
                    learn_num_times: int = 5, max_num_steps: int | None = None,
-                   glitch_percent: float = 0.0):
+                   glitch_percent: float = 0.0, print_level: int = 0):
     all_combinations = [
-        (automata_type, automata_file, algorithm_name, oracle_type, results_dir, max_num_steps, glitch_percent)
+        (automata_type, automata_file, algorithm_name, oracle_type, results_dir, max_num_steps, glitch_percent, print_level)
         for (automata_file, algorithm_name, oracle_type)
         in itertools.product(automata_files, algorithm_names, oracle_types)
     ]
@@ -345,6 +345,8 @@ def main():
                             help="Whether to reuse existing automata or to force generation of new ones")
         parser.add_argument('-rd', '--results_dir', type=str, default="learning_results",
                             help='Directory to store results in.')
+        parser.add_argument('-pl', '--print_level', type=int, default=0,
+                            help="Print level for all algorithms. Usually ranges from 0 (nothing) to 3 (everything).")
         args = parser.parse_args()
 
         selected_algorithms = args.algorithms
@@ -361,6 +363,7 @@ def main():
         generated_automata_dir = args.generated_automata_dir
         reuse_existing_automata = args.reuse
         results_dir = new_file(args.results_dir)
+        print_level = args.print_level
 
     else:
         selected_algorithms = get_user_choices("Select algorithms to learn with", algorithms.keys())
@@ -387,6 +390,7 @@ def main():
             reuse_existing_automata = input("Reuse existing automata? (y/n) (default: yes): ") in ("y", "Y", "yes", "")
 
         results_dir = new_file(input("Enter path to results directory: ") or "learning_results")
+        print_level = int(input("Enter the print level for the algorithms (0 - 3) (default: 0): ") or 0)
 
     if learn_from_dir:
         files_to_learn = get_all_automata_files_from_dir(learn_from_dir)
@@ -396,7 +400,7 @@ def main():
                                                                generated_automata_dir, reuse_existing_automata)
 
     learn_automata(automata_type, files_to_learn, selected_algorithms, selected_oracles, results_dir,
-                   learn_num_times, max_num_steps, glitch_percent)
+                   learn_num_times, max_num_steps, glitch_percent, print_level)
 
 if __name__ == '__main__':
     main()

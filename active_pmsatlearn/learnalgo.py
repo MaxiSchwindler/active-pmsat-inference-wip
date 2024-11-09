@@ -1,5 +1,6 @@
 import itertools
 import time
+import math
 from collections import defaultdict
 from pprint import pprint
 
@@ -14,16 +15,21 @@ from active_pmsatlearn.utils import *
 
 class PmSATLearn:
     """ Small wrapper class around the pmSATLearn algorithm to keep track of the number of calls"""
-    def __init__(self, automata_type, pm_strategy, timeout, cost_scheme, print_info):
+    def __init__(self, automata_type: str, pm_strategy: str, timeout: float | None, cost_scheme: str, print_info: bool,
+                 logging_func: callable = print, max_calls_per_round: int = 1):
         self.automata_type = automata_type
         self.pm_strategy = pm_strategy
         self.timeout = timeout
         self.cost_scheme = cost_scheme
         self.print_info = print_info
         self.num_calls_to_pmsat_learn = 0
+        self.log = logging_func
+        self.max_calls_per_round = max_calls_per_round
 
-    def run(self, traces: Sequence[Trace], num_states: int):
+    def run_once(self, traces: Sequence[Trace], num_states: int):
         self.num_calls_to_pmsat_learn += 1
+        self.log(f"Running pmSATLearn to learn a {num_states}-state automaton from {len(traces)} traces "
+                 f"({self.num_calls_to_pmsat_learn}. call)", level=2)
         hyp, hyp_stoc, info = run_pmSATLearn(data=traces,
                                              n_states=num_states,
                                              automata_type=self.automata_type,
@@ -31,7 +37,52 @@ class PmSATLearn:
                                              timeout=self.timeout,
                                              cost_scheme=self.cost_scheme,
                                              print_info=self.print_info)
+        if hyp:
+            info['num_glitches'] = len(info['glitch_steps'])
+            self.log(f"pmSATLearn learned a hypothesis with {info['num_glitches']} glitches.", level=2)
+        else:
+            self.log(f"pmSATLearn could not learn a hypothesis.", level=2)
+            info['num_glitches'] = math.inf
+
         return hyp, hyp_stoc, info
+
+    def run_multiple(self,
+                     traces: Sequence[Trace],
+                     min_states: int | None = None, max_states: int = 10, initial_num_states: int | None = None,
+                     target_glitch_percentage: float = 0.0,
+                     ):
+        min_states = get_num_outputs(traces) if min_states is None else min_states
+        initial_num_states = max(min_states, initial_num_states) if initial_num_states is not None else min_states
+
+        assert min_states <= max_states, f"Minimum number of states {min_states} must be smaller than maximum {max_states}"
+
+        def num_states_generator():
+            if initial_num_states != min_states:
+                yield initial_num_states
+            yield from range(min_states, max_states+1)
+
+        best_solution = None
+        least_glitches = math.inf
+        complete_num_steps = sum(len(trace) for trace in traces)
+
+        self.log(f"Running pmSATLearn to try and find a solution with less than {target_glitch_percentage}% glitches", level=1)
+        for num_states in num_states_generator():
+            solution = self.run_once(traces, num_states)
+            num_glitches = len(solution[2]["glitch_steps"])
+            percentage = num_glitches / complete_num_steps * 100
+
+            if percentage <= target_glitch_percentage:
+                self.log(f"Found {num_states}-state solution with {percentage}% glitches!", level=1)
+                return solution
+
+            if num_glitches < least_glitches:
+                least_glitches = num_glitches
+                best_solution = solution
+
+        self.log(f"After {num_states-initial_num_states} calls with num_states ranging from {initial_num_states} to {num_states}, "
+                 f"no solution with less than {least_glitches / complete_num_steps * 100}% glitches was found. "
+                 f"Returning solution with least glitches.", level=1)
+        return best_solution
 
 
 def run_activePmSATLearn(
@@ -46,7 +97,9 @@ def run_activePmSATLearn(
     input_completeness_processing: bool = True,
     cex_processing: bool = True,
     glitch_processing: bool = True,
-    additional_states_threshold: int = 10,
+    allowed_glitch_percentage: float = 0.0,
+    min_states: int | None = None,
+    max_states: int = 10,
     return_data: bool = True,
     print_level: int | None = 2,
 ) -> (
@@ -103,26 +156,27 @@ def run_activePmSATLearn(
         traces.append(trace_query(sul, input_combination))
     log(f"Initial traces: {traces}", level=3)
 
-    num_states_before_receiving_cex = {}
-    num_states = get_num_outputs(traces)  # start with minimum number of states in first round
-
     start_time = time.time()
     eq_query_time = 0
     learning_rounds = 0
     detailed_learning_info = defaultdict(dict)
 
+    hyp = None
     pmsat_learn = PmSATLearn(automata_type=automaton_type,
                              pm_strategy=pm_strategy,
                              timeout=timeout,
                              cost_scheme=cost_scheme,
-                             print_info=print_level > 2)
+                             print_info=print_level > 2,
+                             logging_func=log)
 
     while True:
         learning_rounds += 1
-        log(f"Learning with passive pmSATLearn (round {learning_rounds}). "
-            f"Learning a {num_states}-state automaton from {len(traces)} traces.", level=2)
         detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
-        hyp, hyp_stoc, pmsat_info = pmsat_learn.run(traces, num_states)
+        hyp, hyp_stoc, pmsat_info = pmsat_learn.run_multiple(traces=traces,
+                                                             min_states=min_states,
+                                                             max_states=max_states,
+                                                             initial_num_states=len(hyp.states) if hyp is not None else None,
+                                                             target_glitch_percentage=allowed_glitch_percentage)
 
         #####################################
         #           PRE-PROCESSING          #
@@ -143,7 +197,6 @@ def run_activePmSATLearn(
             if preprocessing_additional_traces:
                 log(f"Learning again after preprocessing with passive pmSATLearn (round {learning_rounds})...", level=2)
                 traces = traces + preprocessing_additional_traces
-                num_states = max(num_states, get_num_outputs(traces))
                 # TODO should this count as learning_round? we track the number of solver calls seperately
                 #  however, this would also overwrite this rounds detailed_learning_info (i.e. "preprocessing_additional_traces") - would needa a special case
                 continue  # jump back up and learn again
@@ -228,50 +281,8 @@ def run_activePmSATLearn(
 
             traces = traces + postprocessing_additional_traces_cex
 
-        #####################################
-        #          CALC NUM_STATES          #
-        #####################################
-
-        # set number of states for next iteration
-        cex_as_tuple = tuple(cex)
-        num_outputs = get_num_outputs(traces)
-        if cex_as_tuple in num_states_before_receiving_cex:
-            # we already saw and processed this cex once before
-            # increase the number of states from last time by one (if number of outputs isn't anyways higher)
-            # TODO: the number of states could already be higher now, this way decreases the num_states again
-            #  (i.e. we learned with 3 states, received cex, learned some more rounds, now we learned with 10 states,
-            #   then we received the same cex again - now we start over at 4 states). Does that make sense?
-            #   Does this whole thing make sense for non-consecutive counter examples?
-            num_states_last_time = num_states_before_receiving_cex[cex_as_tuple]
-            num_states = max(num_states_last_time + 1, num_outputs)
-            log(f"This counterexample ({cex}) was already seen before with {num_states_last_time} states, "
-                f"increase number of states by at least 1 to {num_states}", level=2)
-        else:
-            # this is the first time we handled this cex
-            # try again with the same number of states (if num_outputs hasn't increased)
-            num_states = max(num_states, num_outputs)
-            log(f"This is the first time we received counterexample {cex}. After processing, "
-                f"run pmSATLearn again with the same number of states ({num_states}) if possible.", level=2)
-
-        if num_states > num_outputs + additional_states_threshold:
-            log(f"Next number of states ({num_states}) is much larger than number of outputs ({num_outputs}) plus "
-                f"threashold ({additional_states_threshold}). Aborting.", level=1)
-
-            if return_data:
-                total_time = round(time.time() - start_time, 2)
-                eq_query_time = round(eq_query_time, 2)
-                learning_time = round(total_time - eq_query_time, 2)
-
-                active_info = build_info_dict(None, sul, eq_oracle, pmsat_learn, learning_rounds, total_time,
-                                              learning_time, eq_query_time, {}, detailed_learning_info, None,
-                                              "too_many_states")
-                log(active_info, level=2)
-
-                return None, active_info
-            else:
-                return None
-
-        num_states_before_receiving_cex[cex_as_tuple] = num_states
+        if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
+            log(f"No additional traces were produced during this round", level=2)
 
 
 def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
@@ -369,7 +380,6 @@ def _do_glitch_processing(sul: SupportedSUL, pmsat_info: dict[str, Any], hyp_sto
 
 def build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time, eq_query_time,
                     last_pmsat_info, detailed_learning_info, hyp_stoc, abort_reason=None):
-    assert learning_rounds == pmsat_learn.num_calls_to_pmsat_learn
     active_info = {
         'learning_rounds': learning_rounds,
         'learned_automaton_size': hyp.size if hyp is not None else None,

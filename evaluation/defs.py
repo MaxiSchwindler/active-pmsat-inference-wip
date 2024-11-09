@@ -3,6 +3,7 @@ from functools import partial
 import aalpy.learning_algs
 from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.base import Oracle, SUL
+from aalpy.base.SUL import CacheSUL
 from aalpy.oracles import RandomWalkEqOracle, RandomWMethodEqOracle
 
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
@@ -14,7 +15,6 @@ HOUR = HOURS = MINUTE * 60
 
 common_args = dict(automaton_type='moore',
                    return_data=True,
-                   print_level=0,
                    )
 
 run_kv = partial(aalpy.learning_algs.run_KV, cex_processing=None, **common_args)
@@ -83,24 +83,26 @@ class PerfectMooreOracle(Oracle):
             tuple or list containing counterexample inputs, None if no counterexample is found
         """
         self.reset_hyp_and_sul(hypothesis)
-        mm = self.sul.automaton
-        assert set(mm.get_input_alphabet()) == set(
-            self.alphabet
-        ), f"{mm.get_input_alphabet()} != {self.alphabet}"
-        dis = mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state, self.alphabet)
-        if dis is None:
+        if isinstance(self.sul, CacheSUL):
+            mm = self.sul.sul.automaton
+        else:
+            mm = self.sul.automaton
+        assert set(mm.get_input_alphabet()) == set(self.alphabet), f"{mm.get_input_alphabet()} != {self.alphabet}"
+
+        if (dis := mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state, self.alphabet)) is None:
             return None  # no CEX found
 
         assert self.sul.step(None) == hypothesis.step(None)
+
         for index, inp in enumerate(dis):
-            out1 = self.sul.step(inp)
-            out2 = hypothesis.step(inp)
-            if out1 != out2:
+            out_sul = self.sul.step(inp)
+            out_hyp = hypothesis.step(inp)
+            if out_sul != out_hyp:
                 assert (
                     index == len(dis) - 1
                 ), f"Difference in output not on last index? {index} != {len(dis)-1}"
                 return dis
-                # print("Found difference in output without exception??")
+
         assert False, "Did not find difference in output on performing CEX??"
 
 

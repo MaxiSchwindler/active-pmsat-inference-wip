@@ -59,3 +59,12 @@ def timeit(name=None):
             return result
         return wrapper
     return decorator
+
+
+def remove_duplicate_traces(traces, additional_traces):
+    traces_set = set(traces)
+    additional_traces[:] = [trace for trace in additional_traces if trace not in traces_set]
+
+
+def log_all(message, level=0):
+    print(message)
