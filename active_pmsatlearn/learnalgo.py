@@ -227,6 +227,7 @@ def run_activePmSATLearn(
             if not nondet_hyp_with_glitches.is_input_complete():
                 nondet_hyp_with_glitches.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
 
+            log("Querying for counterexample with nondeterministic Moore Machine...", level=2)
             eq_query_start = time.time()
             cex = eq_oracle.find_cex(nondet_hyp_with_glitches)  # TODO maybe collect multiple counterexamples?
             eq_query_time += time.time() - eq_query_start

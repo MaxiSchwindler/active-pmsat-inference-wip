@@ -140,6 +140,7 @@ class GlitchingSUL(SULWrapper):
         super().__init__(sul)
         self.glitch_percentage = glitch_percentage
         self.fault_type = fault_type
+        self.num_glitched_steps = 0
 
         if fault_type == "nondeterminism_on_transitions":
             self.glitch_transitions = defaultdict(dict)
@@ -159,6 +160,7 @@ class GlitchingSUL(SULWrapper):
             # no glitch
             return self.sul.step(input)
 
+        self.num_glitched_steps += 1
         match self.fault_type:
             case "nondeterminism_on_transitions":
                 next_state = self.glitch_transitions[self.sul.automaton.current_state][input]

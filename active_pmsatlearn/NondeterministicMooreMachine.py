@@ -14,7 +14,7 @@ class NondeterministicMooreState(AutomatonState, Generic[InputType, OutputType])
     def __init__(self, state_id, output=None):
         super().__init__(state_id)
         self.output: OutputType = output
-        self.transitions: dict[InputType, list[NondeterministicMooreState]] = defaultdict(list)
+        self.transitions: dict[InputType, set[NondeterministicMooreState]] = defaultdict(set)
 
     @staticmethod
     def from_moore_state(moore_state: MooreState):
@@ -24,16 +24,16 @@ class NondeterministicMooreState(AutomatonState, Generic[InputType, OutputType])
 class NondeterministicMooreMachine(Automaton[NondeterministicMooreState[InputType, OutputType]]):
     def __init__(self, initial_state: NondeterministicMooreState, states: list[NondeterministicMooreState]):
         super().__init__(initial_state, states)
-        self.current_state: list[NondeterministicMooreState] = [initial_state]
+        self.current_state: set[NondeterministicMooreState] = {initial_state}
 
     def reset_to_initial(self):
-        self.current_state = [self.initial_state]
+        self.current_state = {self.initial_state}
 
     def step(self, letter):
-        next_states = []
+        next_states = set()
         for state in self.current_state:
             if letter in state.transitions:
-                next_states.extend(state.transitions[letter])
+                next_states.update(state.transitions[letter])
         self.current_state = next_states
         return [s.output for s in self.current_state]
 
@@ -53,9 +53,9 @@ class NondeterministicMooreMachine(Automaton[NondeterministicMooreState[InputTyp
             for i in input_al:
                 if i not in state.transitions.keys():
                     if missing_transition_go_to == 'sink_state':
-                        state.transitions[i].append(sink_state)
+                        state.transitions[i].add(sink_state)
                     else:
-                        state.transitions[i].append(state)
+                        state.transitions[i].add(state)
 
     def execute_sequence(self, origin_state, seq):
         return super().execute_sequence(origin_state, seq)
@@ -70,12 +70,12 @@ class NondeterministicMooreMachine(Automaton[NondeterministicMooreState[InputTyp
         First state in the state setup is the initial state.
         Example state setup:
         state_setup = {
-                "a": ("a", {"x": ["b1"], "y": ["a", "b1"]}),
-                "b1": ("b", {"x": ["b2"], "y": ["a"]}),
-                "b2": ("b", {"x": ["b3"], "y": ["a"]}),
-                "b3": ("b", {"x": ["b4"], "y": ["a"]}),
-                "b4": ("b", {"x": ["c"], "y": ["a"]}),
-                "c": ("c", {"x": ["a"], "y": ["a"]}),
+                "a": ("a", {"x": {"b1"}, "y": {"a", "b1"}}),
+                "b1": ("b", {"x": {"b2"}, "y": {"a"}}),
+                "b2": ("b", {"x": {"b3"}, "y": {"a"}}),
+                "b3": ("b", {"x": {"b4"}, "y": {"a"}}),
+                "b4": ("b", {"x": {"c"}, "y": {"a"}}),
+                "c": ("c", {"x": {"a"}, "y": {"a"}}),
             }
 
         Args:
@@ -93,7 +93,7 @@ class NondeterministicMooreMachine(Automaton[NondeterministicMooreState[InputTyp
         # add transitions to states
         for state_id, state in states.items():
             for _input, target_state_id in state_setup[state_id][1].items():
-                state.transitions[_input].append(states[target_state_id])
+                state.transitions[_input].add(states[target_state_id])
 
         # states to list
         states = [state for state in states.values()]
@@ -130,6 +130,6 @@ def hyp_stoc_to_nondet_mm(hyp_stoc: MooreMachine) -> NondeterministicMooreMachin
         for inp, next_state in state.transitions.items():
             clean_inp = get_input_from_stoc_trans(inp)
             nondet_next_state = nondet_mm.get_state_by_id(next_state.state_id)
-            nondet_state.transitions[clean_inp].append(nondet_next_state)
+            nondet_state.transitions[clean_inp].add(nondet_next_state)
 
     return nondet_mm

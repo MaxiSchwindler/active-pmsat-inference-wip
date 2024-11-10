@@ -50,7 +50,7 @@ for combination in dict_product(apml_choices):
     for k, v in combination.items():
         if not v:
             alg_name += f"_no_{k}"
-    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=10*MINUTES, allowed_glitch_percentage=1, **combination, **common_args)
+    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=10*MINUTES, allowed_glitch_percentage=2, **combination, **common_args)
     algorithms[alg_name] = run_apml_config
 
 # add ActivePMSL(n)_only_<> combinations
@@ -112,7 +112,7 @@ class RandomWalkOracle(RandomWalkEqOracle):
         super().__init__(
             alphabet=sul.automaton.get_input_alphabet(),
             sul=sul,
-            num_steps=sul.automaton.size * 15_000,
+            num_steps=sul.automaton.size * 5_000,
             reset_after_cex=True,
             reset_prob=0.25
         )

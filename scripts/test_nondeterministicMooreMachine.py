@@ -11,9 +11,9 @@ if __name__ == '__main__':
         s1 := NondeterministicMooreState("s0", "a"),
         s2 := NondeterministicMooreState("s1", "b"),
     ]
-    s1.transitions["i"].append(s1)
-    s1.transitions["i"].append(s2)
-    s2.transitions["i"].append(s2)
+    s1.transitions["i"].add(s1)
+    s1.transitions["i"].add(s2)
+    s2.transitions["i"].add(s2)
 
     nondet_mm = NondeterministicMooreMachine(s1, nondet_states)
 
