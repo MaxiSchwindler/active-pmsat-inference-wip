@@ -7,7 +7,7 @@ from aalpy.base.SUL import CacheSUL
 from aalpy.oracles import RandomWMethodEqOracle
 
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
-from active_pmsatlearn.RandomWalkEqOracle import RandomWalkEqOracle
+from active_pmsatlearn.oracles.RandomWalkEqOracle import RandomWalkEqOracle
 from evaluation.utils import dict_product
 
 SECOND = SECONDS = 1
@@ -50,7 +50,7 @@ for combination in dict_product(apml_choices):
     for k, v in combination.items():
         if not v:
             alg_name += f"_no_{k}"
-    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=10*MINUTES, allowed_glitch_percentage=2, **combination, **common_args)
+    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=10*MINUTES, allowed_glitch_percentage=2.5, **combination, **common_args)
     algorithms[alg_name] = run_apml_config
 
 # add ActivePMSL(n)_only_<> combinations
@@ -90,14 +90,34 @@ class PerfectMooreOracle(Oracle):
             mm = self.sul.automaton
         assert set(mm.get_input_alphabet()) == set(self.alphabet), f"{mm.get_input_alphabet()} != {self.alphabet}"
 
-        if (dis := mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state, self.alphabet)) is None:
-            return None  # no CEX found
+        if not isinstance(hypothesis.current_state, set):
+            nondeterministic = False
+            if (dis := mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state, self.alphabet)) is None:
+                return None  # no CEX found
+        else:
+            raise NotImplementedError("NondeterministicMooreMachine doesn't support find_distinguishing_seq, "
+                                      "which is required for the PerfectMooreOracle")
+            nondeterministic = True
+            dis = set()
+            for s in hypothesis.current_state:
+                if (d := mm.find_distinguishing_seq(mm.current_state, s, self.alphabet)) is not None:
+                    dis.add(d)
+            if len(dis) == 0:
+                return None  # no CEX found
+            else:
+                dis = dis.pop()
 
         assert self.sul.step(None) == hypothesis.step(None)
 
         for index, inp in enumerate(dis):
             out_sul = self.sul.step(inp)
             out_hyp = hypothesis.step(inp)
+
+            # if nondeterministic:
+            #     check = out_sul in out_hyp
+            # else:
+            #     check = out_sul == out_hyp
+
             if out_sul != out_hyp:
                 assert (
                     index == len(dis) - 1

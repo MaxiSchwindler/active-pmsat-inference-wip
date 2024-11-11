@@ -1,8 +1,7 @@
 from aalpy import MooreState, MooreMachine
 from aalpy.SULs import MooreSUL
 
-from active_pmsatlearn.RandomWalkEqOracle import RandomWalkEqOracle
-from active_pmsatlearn.NondeterministicMooreMachine import NondeterministicMooreMachine, NondeterministicMooreState
+from active_pmsatlearn.oracles import RandomWalkEqOracle, NondeterministicMooreMachine, NondeterministicMooreState
 
 
 if __name__ == '__main__':

@@ -120,7 +120,7 @@ class NondeterministicMooreMachine(Automaton[NondeterministicMooreState[InputTyp
 
 
 def hyp_stoc_to_nondet_mm(hyp_stoc: MooreMachine) -> NondeterministicMooreMachine:
-    from .utils import get_input_from_stoc_trans
+    from ..utils import get_input_from_stoc_trans
     nondet_states = [NondeterministicMooreState.from_moore_state(state) for state in hyp_stoc.states]
     initial_state = [s for s in nondet_states if s.state_id == hyp_stoc.initial_state.state_id][0]
     nondet_mm = NondeterministicMooreMachine(initial_state, nondet_states)

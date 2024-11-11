@@ -3,7 +3,7 @@ import random
 from aalpy.automata import Onfsm, Mdp, StochasticMealyMachine
 from aalpy.base import Oracle, SUL
 
-from active_pmsatlearn.NondeterministicMooreMachine import NondeterministicMooreMachine
+from active_pmsatlearn.oracles import NondeterministicMooreMachine
 
 ###
 # The code used in this file is copied from the AALpy project:

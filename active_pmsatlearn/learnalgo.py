@@ -8,7 +8,7 @@ from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.automata import MooreMachine, MealyMachine
 from aalpy.base import Oracle
 
-from active_pmsatlearn.NondeterministicMooreMachine import hyp_stoc_to_nondet_mm
+from active_pmsatlearn.oracles import hyp_stoc_to_nondet_mm
 from pmsatlearn import run_pmSATLearn
 
 from active_pmsatlearn.utils import *
@@ -63,6 +63,9 @@ class PmSATLearn:
         initial_num_states = max(min_states, initial_num_states) if initial_num_states is not None else min_states
 
         assert min_states <= max_states, f"Minimum number of states {min_states} must be smaller than maximum {max_states}"
+
+        # TODO: use metrics (e.g. number of glitches that could be solved with adding only one state) to increase by
+        #  more than 1 - can i find that out?
 
         def num_states_generator():
             if initial_num_states != min_states:
@@ -131,6 +134,10 @@ def run_activePmSATLearn(
                                           before querying the oracle for a counterexample
     :param cex_processing: whether counterexample processing should be performed
     :param glitch_processing: whether glitch processing should be performed
+    :param min_states: The minimum number of states the SUL is expected to have.
+                       Ignored if the number of outputs is higher.
+    :param max_states: The maximum number of states the SUL is expected to have.
+    :param allowed_glitch_percentage: How many percent of steps can be assumed to be glitches.
     :param return_data: whether to return a dictionary containing learning information
     :param print_level: 0 - None,
                         1 - just results,
