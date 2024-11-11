@@ -14,6 +14,10 @@ from pmsatlearn import run_pmSATLearn
 from active_pmsatlearn.utils import *
 
 
+USE_NONDET_HYP = False
+PRUNE_HYPOTHESIS = True
+
+
 class PmSATLearn:
     """ Small wrapper class around the pmSATLearn algorithm to keep track of the number of calls"""
     def __init__(self, automata_type: str, pm_strategy: str, timeout: float | None, cost_scheme: str, print_info: bool,
@@ -229,14 +233,23 @@ def run_activePmSATLearn(
         if hyp is not None and pmsat_info["is_sat"]:
             log(f"pmSATLearn learned hypothesis with {len(hyp.states)} states", level=1)
 
-            nondet_hyp_with_glitches = hyp_stoc_to_nondet_mm(hyp_stoc)
+            if USE_NONDET_HYP:
+                hyp_for_oracle = hyp_stoc_to_nondet_mm(hyp_stoc)
+                description = "nondeterministic hypothesis (containing glitches)"
+            else:
+                hyp_for_oracle = hyp
+                description = "deterministic hypothesis"
 
-            if not nondet_hyp_with_glitches.is_input_complete():
-                nondet_hyp_with_glitches.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
+            if PRUNE_HYPOTHESIS:
+                hyp_for_oracle.states = [s for s in hyp_for_oracle.states if s.prefix is not None]
+                description = f"pruned {description}"
 
-            log("Querying for counterexample with nondeterministic Moore Machine...", level=2)
+            if not hyp_for_oracle.is_input_complete():
+                hyp_for_oracle.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
+
+            log(f"Querying for counterexample with {description}...", level=2)
             eq_query_start = time.time()
-            cex = eq_oracle.find_cex(nondet_hyp_with_glitches)  # TODO maybe collect multiple counterexamples?
+            cex = eq_oracle.find_cex(hyp_for_oracle)  # TODO maybe collect multiple counterexamples?
             eq_query_time += time.time() - eq_query_start
 
         else:

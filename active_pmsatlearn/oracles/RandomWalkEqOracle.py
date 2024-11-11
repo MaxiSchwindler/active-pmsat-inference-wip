@@ -12,7 +12,8 @@ from active_pmsatlearn.oracles import NondeterministicMooreMachine
 # Following file/class has been copied:
 # -- aalpy/oracles/RandomWalkEqOracle.py
 #
-# handle for NondeterministicMooreMachine
+# Adaptions to the existing code have been made:
+# -- handle NondeterministicMooreMachine
 #
 #
 ###

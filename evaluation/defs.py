@@ -7,6 +7,7 @@ from aalpy.base.SUL import CacheSUL
 from aalpy.oracles import RandomWMethodEqOracle
 
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
+from active_pmsatlearn.oracles.FailSafeLearning.StatePrefixEqOracleFailSafe import StatePrefixOracleFailSafe
 from active_pmsatlearn.oracles.RandomWalkEqOracle import RandomWalkEqOracle
 from evaluation.utils import dict_product
 
@@ -148,9 +149,21 @@ class RandomWMethodOracle(RandomWMethodEqOracle):
         )
 
 
+class FailSafeStatePrefixOracle(StatePrefixOracleFailSafe):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            alphabet=sul.automaton.get_input_alphabet(),
+            sul=sul,
+            walks_per_state=10,
+            walk_len=30,
+            depth_first=False
+        )
+
+
 oracles = {
     "Perfect": PerfectMooreOracle,
     "Random": RandomWalkOracle,
     "Random WMethod": RandomWMethodOracle,
+    "FailSafeStatePrefixOracle": FailSafeStatePrefixOracle
 }
 

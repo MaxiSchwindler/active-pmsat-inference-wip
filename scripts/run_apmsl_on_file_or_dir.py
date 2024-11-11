@@ -45,7 +45,7 @@ def main():
 
     for file in dot_files:
         sul = get_sul_from_file(file, glitch_percent)
-        oracle = get_oracle("Perfect", sul)
+        oracle = get_oracle("FailSafeStatePrefixOracle", sul)
 
         print(f"Learning {file}...")
         learned_model, info = run_activePmSATLearn(
@@ -56,11 +56,12 @@ def main():
             extension_length=2,
             pm_strategy="rc2",
             timeout=None,
-            print_level=3,
+            print_level=2,
             return_data=True,
             input_completeness_processing=True,
             cex_processing=True,
             glitch_processing=True,
+            allowed_glitch_percentage=glitch_percent * 2.5 if glitch_percent else 0,
         )
 
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

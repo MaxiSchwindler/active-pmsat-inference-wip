@@ -12,6 +12,7 @@ from datetime import datetime
 from aalpy.utils import load_automaton_from_file
 from pebble import ProcessPool
 
+from active_pmsatlearn.oracles.FailSafeLearning.FailSafeCacheSUL import FailSafeCacheSUL
 from active_pmsatlearn.utils import *
 from evaluation.generate_automata import *
 from evaluation.utils import *
@@ -71,6 +72,7 @@ def setup_sul(automaton: MealyMachine | MooreMachine, max_num_steps: int | None 
 
     if glitch_percent:
         sul = GlitchingSUL(sul, glitch_percent)
+        sul = FailSafeCacheSUL(sul)
 
     return sul
 

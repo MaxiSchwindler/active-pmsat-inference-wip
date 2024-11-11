@@ -161,6 +161,8 @@ class GlitchingSUL(SULWrapper):
             return self.sul.step(input)
 
         self.num_glitched_steps += 1
+        print(f"Glitch in SUL for input {input} ({self.num_glitched_steps}. glitch)")
+
         match self.fault_type:
             case "nondeterminism_on_transitions":
                 next_state = self.glitch_transitions[self.sul.automaton.current_state][input]
