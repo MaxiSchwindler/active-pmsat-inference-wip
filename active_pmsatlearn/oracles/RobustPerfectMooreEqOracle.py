@@ -37,21 +37,23 @@ class RobustPerfectMooreEqOracle(Oracle, RobustEqOracleMixin):
 
         assert set(mm.get_input_alphabet()) == set(self.alphabet), f"{mm.get_input_alphabet()} != {self.alphabet}"
 
-        with cm:
+        with cm():
             if (dis := mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state, self.alphabet)) is None:
                 return None  # no CEX found
 
             assert self.sul.step(None) == hypothesis.step(None)
 
+            outputs_sul = []
             for index, inp in enumerate(dis):
                 out_sul = self.sul.step(inp)
                 out_hyp = hypothesis.step(inp)
+                outputs_sul.append(out_sul)
 
                 if out_sul != out_hyp:
                     assert (
                             index == len(dis) - 1
                     ), f"Difference in output not on last index? {index} != {len(dis) - 1}"
-                    return dis
+                    return dis, outputs_sul
 
             assert False, "Did not find difference in output on performing CEX?"
 

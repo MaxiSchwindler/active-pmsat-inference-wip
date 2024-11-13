@@ -65,8 +65,7 @@ for alg in algorithms.values():
 
 class RobustPerfectMooreOracle(RobustPerfectMooreEqOracle):
     def __init__(self, sul: MooreSUL):
-        alphabet = sul.automaton.get_input_alphabet()
-        super().__init__(alphabet, sul)
+        super().__init__(sul)
 
 
 class RobustRandomWalkOracle(RobustRandomWalkEqOracle):
