@@ -6,6 +6,7 @@ from pprint import pprint
 
 from aalpy.base import Oracle
 
+from active_pmsatlearn.oracles import RobustEqOracleMixin
 from pmsatlearn import run_pmSATLearn
 
 from active_pmsatlearn.utils import *
@@ -141,7 +142,8 @@ def run_activePmSATLearn(
                         2 - current round information,
                         3 - pmsat-learn output and logging of traces
     """
-    # Input verification happens in run_pmSATLearn
+    assert isinstance(eq_oracle, RobustEqOracleMixin), f"To ensure reliable counterexamples, a robust oracle must be passed."
+    # additional input verification happens in run_pmSATLearn
 
     def log(message: Any, level: int):
         if print_level >= level:

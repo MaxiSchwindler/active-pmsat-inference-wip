@@ -136,21 +136,11 @@ class GlitchingSUL(SULWrapper):
     def __init__(self,
                  sul: TracedMooreSUL | MooreSUL,
                  glitch_percentage: float,
-                 fault_type: Literal["nondeterminism_on_transitions", "send_random_input", "enter_random_state", "discard_io_tuple"] = 'nondeterminism_on_transitions'):
+                 fault_type: Literal["send_random_input", "enter_random_state", "discard_io_tuple"] = 'send_random_input'):
         super().__init__(sul)
         self.glitch_percentage = glitch_percentage
         self.fault_type = fault_type
         self.num_glitched_steps = 0
-
-        if fault_type == "nondeterminism_on_transitions":
-            self.glitch_transitions = defaultdict(dict)
-            for state in self.sul.automaton.states:
-                for input, correct_next_state in state.transitions.items():
-                    glitch_next_state = random.choice([s for s in self.sul.automaton.states if s != correct_next_state])
-                    self.glitch_transitions[state][input] = glitch_next_state
-
-            print("GlitchingSUL has following glitches:")
-            pprint(self.glitch_transitions)
 
     def step(self, input):
         if input is None:
@@ -162,14 +152,6 @@ class GlitchingSUL(SULWrapper):
 
         self.num_glitched_steps += 1
         match self.fault_type:
-            case "nondeterminism_on_transitions":
-                next_state = self.glitch_transitions[self.sul.automaton.current_state][input]
-                fault_output = next_state.output
-                self.sul.current_state = next_state
-                if isinstance(self.sul, TracedMooreSUL):
-                    self.traces[-1].append((input, fault_output))
-                return fault_output
-
             case "send_random_input":
                 assert len(alphabet := self.sul.automaton.get_input_alphabet()) > 1
                 while (fault_input := random.choice(alphabet)) == input:

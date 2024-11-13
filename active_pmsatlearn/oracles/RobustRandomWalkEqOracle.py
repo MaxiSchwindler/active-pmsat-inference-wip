@@ -25,8 +25,8 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
     that the system will reset and a new query asked.
     """
 
-    def __init__(self, alphabet: list, sul: SUL, num_steps=5000, reset_after_cex=True, reset_prob=0.09,
-                 perform_n_times=10, validity_threshold=0.7):
+    def __init__(self, alphabet: list, sul: SUL, num_steps=50, reset_after_cex=True, reset_prob=0.09,
+                 perform_n_times=20, validity_threshold=0.51):
         """
 
         Args:
@@ -76,15 +76,17 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
             inputs.append(random.choice(self.alphabet))
 
             out_sul = self.sul.step(inputs[-1])
-            outputs_hyp.append(out_sul)
+            outputs_sul.append(out_sul)
 
             out_hyp = hypothesis.step(inputs[-1])
-            outputs_sul.append(out_hyp)
+            outputs_hyp.append(out_hyp)
 
             if out_sul != out_hyp:
 
                 valid_cex, cex_inputs, cex_outputs = self.validate_counterexample(inputs, outputs_sul, outputs_hyp)
                 if not valid_cex:
+                    outputs_sul.pop()
+                    outputs_sul.append(cex_outputs[-1])
                     continue
 
                 if self.reset_after_cex:
@@ -95,7 +97,7 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
                     return cex_inputs, cex_outputs
                 return cex_inputs
 
-        return None
+        return None, []
 
     def reset_counter(self):
         if self.reset_after_cex:

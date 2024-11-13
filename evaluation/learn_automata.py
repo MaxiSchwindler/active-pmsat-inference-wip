@@ -202,7 +202,7 @@ def print_results_info(results: list[dict]):
 
     if glitch_percent:
         print(f"Glitch percentage: {glitch_percent}%")
-        print("Fault type: 'nondeterminism_on_transitions'")
+        print("Fault type: 'send_random_input'")
         sep()
 
     exceptions = [r['exception'] for r in results if "exception" in r]
