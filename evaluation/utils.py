@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from aalpy.SULs import MealySUL, MooreSUL
 from aalpy.automata import MooreMachine
 from aalpy.base import SUL
+from contextlib import contextmanager
 
 
 def parse_range(value: str | int | range) -> range:
@@ -180,6 +181,15 @@ class GlitchingSUL(SULWrapper):
 
             case _other:
                 raise TypeError(f"Unsupported fault type '{_other}'")
+
+    @contextmanager
+    def dont_glitch(self):
+        prev = self.glitch_percentage
+        try:
+            self.glitch_percentage = 0
+        finally:
+            self.glitch_percentage = prev
+
 
 
 def dict_product(options) -> Iterable[dict]:

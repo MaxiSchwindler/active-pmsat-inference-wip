@@ -2,12 +2,10 @@ from functools import partial
 
 import aalpy.learning_algs
 from aalpy.SULs import MooreSUL, MealySUL
-from aalpy.base import Oracle, SUL
-from aalpy.base.SUL import CacheSUL
 from aalpy.oracles import RandomWMethodEqOracle
 
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
-from active_pmsatlearn.oracles import RobustRandomWalkEqOracle
+from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
 from evaluation.utils import dict_product
 
 SECOND = SECONDS = 1
@@ -65,66 +63,10 @@ for alg in algorithms.values():
     alg.unique_keywords = {k: alg.keywords[k] for k in alg.keywords if k not in common_args}
 
 
-class PerfectMooreOracle(Oracle):
+class RobustPerfectMooreOracle(RobustPerfectMooreEqOracle):
     def __init__(self, sul: MooreSUL):
         alphabet = sul.automaton.get_input_alphabet()
         super().__init__(alphabet, sul)
-
-    def find_cex(self, hypothesis):
-        """
-        Return a counterexample (inputs) that displays different behavior on system under learning and
-        current hypothesis.
-
-        Args:
-
-          hypothesis: current hypothesis
-
-        Returns:
-
-            tuple or list containing counterexample inputs, None if no counterexample is found
-        """
-        self.reset_hyp_and_sul(hypothesis)
-        if isinstance(self.sul, CacheSUL):
-            mm = self.sul.sul.automaton
-        else:
-            mm = self.sul.automaton
-        assert set(mm.get_input_alphabet()) == set(self.alphabet), f"{mm.get_input_alphabet()} != {self.alphabet}"
-
-        if not isinstance(hypothesis.current_state, set):
-            nondeterministic = False
-            if (dis := mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state, self.alphabet)) is None:
-                return None  # no CEX found
-        else:
-            raise NotImplementedError("NondeterministicMooreMachine doesn't support find_distinguishing_seq, "
-                                      "which is required for the PerfectMooreOracle")
-            nondeterministic = True
-            dis = set()
-            for s in hypothesis.current_state:
-                if (d := mm.find_distinguishing_seq(mm.current_state, s, self.alphabet)) is not None:
-                    dis.add(d)
-            if len(dis) == 0:
-                return None  # no CEX found
-            else:
-                dis = dis.pop()
-
-        assert self.sul.step(None) == hypothesis.step(None)
-
-        for index, inp in enumerate(dis):
-            out_sul = self.sul.step(inp)
-            out_hyp = hypothesis.step(inp)
-
-            # if nondeterministic:
-            #     check = out_sul in out_hyp
-            # else:
-            #     check = out_sul == out_hyp
-
-            if out_sul != out_hyp:
-                assert (
-                    index == len(dis) - 1
-                ), f"Difference in output not on last index? {index} != {len(dis)-1}"
-                return dis
-
-        assert False, "Did not find difference in output on performing CEX??"
 
 
 class RobustRandomWalkOracle(RobustRandomWalkEqOracle):
@@ -149,8 +91,8 @@ class RandomWMethodOracle(RandomWMethodEqOracle):
 
 
 oracles = {
-    "Perfect": PerfectMooreOracle,
+    "Perfect": RobustPerfectMooreOracle,
     "Random": RobustRandomWalkOracle,
-    "Random WMethod": RandomWMethodOracle,
+    #"Random WMethod": RandomWMethodOracle,
 }
 

@@ -1,2 +1,3 @@
 from .RobustEqOracleMixin import RobustEqOracleMixin
 from .RobustRandomWalkEqOracle import RobustRandomWalkEqOracle
+from .RobustPerfectMooreEqOracle import RobustPerfectMooreEqOracle

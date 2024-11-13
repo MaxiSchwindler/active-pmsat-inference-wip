@@ -15,7 +15,7 @@ from pebble import ProcessPool
 from active_pmsatlearn.utils import *
 from evaluation.generate_automata import *
 from evaluation.utils import *
-from evaluation.defs import algorithms, oracles, PerfectMooreOracle
+from evaluation.defs import algorithms, oracles, RobustPerfectMooreOracle
 
 
 def get_all_automata_files_from_dir(directory: str):
@@ -81,7 +81,7 @@ def check_equal(sul: MooreSUL, learned_mm: MooreMachine):
     if isinstance(sul, GlitchingSUL):
         # For the equality check, don't have the glitches
         sul = sul.sul
-    perfect_oracle = PerfectMooreOracle(sul)
+    perfect_oracle = RobustPerfectMooreOracle(sul)
     cex = perfect_oracle.find_cex(learned_mm)
     return True if cex is None else False
 
