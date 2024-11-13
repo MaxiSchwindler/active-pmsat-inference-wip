@@ -7,7 +7,7 @@ from aalpy.base.SUL import CacheSUL
 from aalpy.oracles import RandomWMethodEqOracle
 
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
-from active_pmsatlearn.oracles.RandomWalkEqOracle import RandomWalkEqOracle
+from active_pmsatlearn.oracles import RobustRandomWalkEqOracle
 from evaluation.utils import dict_product
 
 SECOND = SECONDS = 1
@@ -127,14 +127,14 @@ class PerfectMooreOracle(Oracle):
         assert False, "Did not find difference in output on performing CEX??"
 
 
-class RandomWalkOracle(RandomWalkEqOracle):
+class RobustRandomWalkOracle(RobustRandomWalkEqOracle):
     def __init__(self, sul: MooreSUL | MealySUL):
         super().__init__(
             alphabet=sul.automaton.get_input_alphabet(),
             sul=sul,
             num_steps=sul.automaton.size * 5_000,
             reset_after_cex=True,
-            reset_prob=0.25
+            reset_prob=0.09
         )
 
 
@@ -150,7 +150,7 @@ class RandomWMethodOracle(RandomWMethodEqOracle):
 
 oracles = {
     "Perfect": PerfectMooreOracle,
-    "Random": RandomWalkOracle,
+    "Random": RobustRandomWalkOracle,
     "Random WMethod": RandomWMethodOracle,
 }
 

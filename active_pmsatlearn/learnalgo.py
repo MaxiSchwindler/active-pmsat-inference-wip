@@ -4,11 +4,8 @@ import math
 from collections import defaultdict
 from pprint import pprint
 
-from aalpy.SULs import MooreSUL, MealySUL
-from aalpy.automata import MooreMachine, MealyMachine
 from aalpy.base import Oracle
 
-from active_pmsatlearn.oracles import hyp_stoc_to_nondet_mm
 from pmsatlearn import run_pmSATLearn
 
 from active_pmsatlearn.utils import *
@@ -229,14 +226,12 @@ def run_activePmSATLearn(
         if hyp is not None and pmsat_info["is_sat"]:
             log(f"pmSATLearn learned hypothesis with {len(hyp.states)} states", level=1)
 
-            nondet_hyp_with_glitches = hyp_stoc_to_nondet_mm(hyp_stoc)
+            if not hyp.is_input_complete():
+                hyp.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
 
-            if not nondet_hyp_with_glitches.is_input_complete():
-                nondet_hyp_with_glitches.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
-
-            log("Querying for counterexample with nondeterministic Moore Machine...", level=2)
+            log("Querying for counterexample...", level=2)
             eq_query_start = time.time()
-            cex = eq_oracle.find_cex(nondet_hyp_with_glitches)  # TODO maybe collect multiple counterexamples?
+            cex, cex_outputs = eq_oracle.find_cex(hyp)  # TODO maybe collect multiple counterexamples?
             eq_query_time += time.time() - eq_query_start
 
         else:
