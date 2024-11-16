@@ -187,6 +187,7 @@ class GlitchingSUL(SULWrapper):
         prev = self.glitch_percentage
         try:
             self.glitch_percentage = 0
+            yield
         finally:
             self.glitch_percentage = prev
 
