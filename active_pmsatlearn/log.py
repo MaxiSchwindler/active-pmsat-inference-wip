@@ -43,7 +43,7 @@ class ColorFormatter(logging.Formatter):
     @staticmethod
     def is_git_bash():
         shell = os.getenv('SHELL')
-        if 'bash.exe' in shell:
+        if shell is not None and 'bash.exe' in shell:
             return True
         return False
 

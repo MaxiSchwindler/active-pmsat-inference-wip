@@ -249,7 +249,7 @@ def run_activePmSATLearn(
         #####################################
 
         detailed_learning_info[learning_rounds]["num_states"] = len(hyp.states) if hyp is not None else None
-        detailed_learning_info[learning_rounds]["num_glitches"] = len(pmsat_info["glitch_steps"])
+        detailed_learning_info[learning_rounds]["num_glitches"] = len(pmsat_info["glitch_steps"]) if hyp is not None else 0
         detailed_learning_info[learning_rounds]["is_sat"] = pmsat_info["is_sat"]
         detailed_learning_info[learning_rounds]["timed_out"] = pmsat_info["timed_out"]
 
@@ -468,14 +468,16 @@ def calc_next_num_states(sul: SupportedSUL, curr_hyp: SupportedAutomaton, curr_p
 def choose_direction(hyp_small: SupportedAutomaton, pmsat_info_small: dict[str, Any],
                      hyp_large: SupportedAutomaton, pmsat_info_large: dict[str, Any],
                      traces: list[Trace]) -> tuple[int, str]:
-    assert id(hyp_large) != id(hyp_small)
 
     if hyp_small is None and hyp_large is not None:
         return INCREASE, "Failed to learn smaller hypothesis"
     elif hyp_small is not None and hyp_large is None:
         return DECREASE, "Failed to learn large hypothesis (how?)"
     elif hyp_small is None and hyp_large is None:
+        # doesn't matter what we give back, both are None
         return INCREASE, "Failed to learn both hypotheses"
+
+    assert id(hyp_large) != id(hyp_small)
 
     glitches_small = len(pmsat_info_small["glitch_steps"])
     glitches_large = len(pmsat_info_large["glitch_steps"])
@@ -534,12 +536,15 @@ def find_similar_frequencies(dominant_frequencies, glitched_frequencies, z_thres
     Calculate the z-score of the dominant frequency relative to the glitched list to find dominant frequencies
     which are similar to glitched frequencies.
     """
+    if len(glitched_frequencies) == 0:
+        return []  # TODO: what to do if glitches == 0? there could be possible glitches in dominant freqs, but no way to compare...
+
     mean_glitched = np.mean(glitched_frequencies)
     std_glitched = np.std(glitched_frequencies)
 
     similar_frequencies = []
     for d in dominant_frequencies:
-        z_score = (d - mean_glitched) / std_glitched  # TODO: what to do if glitches == 0?
+        z_score = (d - mean_glitched) / std_glitched if std_glitched != 0 else 0
         if abs(z_score) <= z_threshold:
             similar_frequencies.append(d)
 
