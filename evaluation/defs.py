@@ -27,11 +27,11 @@ algorithms = {
     "L*": run_lstar,
     "L* (RS)": run_lstar_rs,
     # plus e.g.:
-    # "ActivePMSL(2)
-    # "ActivePMSL(2)_no_glitch_processing
-    # "ActivePMSL(2)_no_cex_processing_no_glitch_processing
-    # "ActivePMSL(2)_no_cex_processing_no_input_completeness_processing_no_glitch_processing
-    # "ActivePMSL(2)_only_cex_processing
+    # "APMSL(2)
+    # "APMSL(2)_no_glitch_processing
+    # "APMSL(2)_no_cex_processing_no_glitch_processing
+    # "APMSL(2)_no_cex_processing_no_input_completeness_processing_no_glitch_processing
+    # "APMSL(2)_only_cex_processing
 }
 
 # keywords for APML
@@ -44,19 +44,19 @@ apml_choices = dict(
 
 # add all ActivePMSL(n)_no_<> combinations
 for combination in dict_product(apml_choices):
-    alg_name = f"ActivePMSL({combination['extension_length']})"
+    alg_name = f"APMSL({combination['extension_length']})"
     for k, v in combination.items():
         if not v:
-            alg_name += f"_no_{k}"
-    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=10*MINUTES, **combination, **common_args)
+            alg_name += f"_no_{''.join(a[0] for a in k.split('_'))}"
+    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=3*MINUTES, **combination, **common_args)
     algorithms[alg_name] = run_apml_config
 
 # add ActivePMSL(n)_only_<> combinations
 for el in apml_choices['extension_length']:
-    alg_name = f"ActivePMSL({el})"
-    algorithms[f"{alg_name}_only_input_completeness_processing"] = algorithms[f"{alg_name}_no_cex_processing_no_glitch_processing"]
-    algorithms[f"{alg_name}_only_cex_processing"] = algorithms[f"{alg_name}_no_input_completeness_processing_no_glitch_processing"]
-    algorithms[f"{alg_name}_only_glitch_processing"] = algorithms[f"{alg_name}_no_input_completeness_processing_no_cex_processing"]
+    alg_name = f"APMSL({el})"
+    algorithms[f"{alg_name}_only_icp"] = algorithms[f"{alg_name}_no_cp_no_gp"]
+    algorithms[f"{alg_name}_only_cp"] = algorithms[f"{alg_name}_no_icp_no_gp"]
+    algorithms[f"{alg_name}_only_gp"] = algorithms[f"{alg_name}_no_icp_no_cp"]
 
 # create .unique_keywords attribute
 for alg in algorithms.values():

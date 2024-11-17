@@ -1,0 +1,2 @@
+With dual-hyp-approach, e.g. following automaton gets stuck in solver:
+C:\private\Uni\MastersThesis\active-pmsat-inference-wip\generated_automata\MooreMachine_6States_3Inputs_2Outputs_22d9803461fd4608897182c579f64c1d.dot

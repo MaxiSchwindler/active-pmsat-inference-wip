@@ -1,10 +1,13 @@
 import time
+import builtins
 from functools import wraps
+from contextlib import contextmanager
 
 from aalpy.base import SUL
 from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.automata import MooreMachine, MealyMachine
 
+from active_pmsatlearn.log import get_logger
 from pmsatlearn.learnalgo import Input, Output
 from typing import Literal, Any, TypeAlias, Sequence
 
@@ -76,5 +79,18 @@ def remove_duplicate_traces(traces, additional_traces):
     additional_traces[:] = [trace for trace in additional_traces if trace not in traces_set]
 
 
-def log_all(message, level=0):
-    print(message)
+@contextmanager
+def override_print(override_with=None):
+    if override_with is None:
+        def overridden_print(*args, **kwargs):
+            pass
+    else:
+        def overridden_print(*args, sep=' ', end='\n', file=None):
+            override_with(sep.join(map(str, args)))
+
+    original_print = builtins.print
+    try:
+        builtins.print = overridden_print
+        yield
+    finally:
+        builtins.print = original_print

@@ -1,4 +1,5 @@
 import itertools
+import logging
 import time
 import math
 import statistics
@@ -10,9 +11,10 @@ import numpy as np
 from aalpy.base import Oracle
 
 from active_pmsatlearn.oracles import RobustEqOracleMixin
-from pmsatlearn import run_pmSATLearn
 
 from active_pmsatlearn.utils import *
+from active_pmsatlearn.log import get_logger, DEBUG_EXT
+logger = get_logger("APMSL")
 
 DECREASE = -1
 INCREASE = 1
@@ -38,22 +40,24 @@ class PmSATLearn:
 
     def run_once(self, traces: Sequence[Trace], num_states: int):
         self.num_calls_to_pmsat_learn += 1
-        self.log(f"Running pmSATLearn to learn a {num_states}-state automaton from {len(traces)} traces "
-                 f"({self.num_calls_to_pmsat_learn}. call)", level=2)
-        hyp, hyp_stoc, info = run_pmSATLearn(data=traces,
-                                             glitchless_data=[],
-                                             n_states=num_states,
-                                             automata_type=self.automata_type,
-                                             pm_strategy=self.pm_strategy,
-                                             timeout=self.timeout,
-                                             cost_scheme=self.cost_scheme,
-                                             print_info=self.print_info)
+        logger.debug(f"Running pmSATLearn to learn a {num_states}-state automaton from {len(traces)} traces "
+                     f"({self.num_calls_to_pmsat_learn}. call)")
+        with override_print(override_with=logger.debug_ext):
+            from pmsatlearn import run_pmSATLearn
+            hyp, hyp_stoc, info = run_pmSATLearn(data=traces,
+                                                 glitchless_data=[],
+                                                 n_states=num_states,
+                                                 automata_type=self.automata_type,
+                                                 pm_strategy=self.pm_strategy,
+                                                 timeout=self.timeout,
+                                                 cost_scheme=self.cost_scheme,
+                                                 print_info=self.print_info)
         if hyp:
             info['num_glitches'] = len(info['glitch_steps'])
             info['num_glitches_percent'] = self.get_glitch_percentage(traces, info['num_glitches'])
-            self.log(f"pmSATLearn learned a hypothesis with {info['num_glitches']} glitches ({info['num_glitches_percent']:.2f}%)", level=2)
+            logger.debug(f"pmSATLearn learned a hypothesis with {info['num_glitches']} glitches ({info['num_glitches_percent']:.2f}%)")
         else:
-            self.log(f"pmSATLearn could not learn a hypothesis.", level=2)
+            logger.debug(f"pmSATLearn could not learn a hypothesis.")
             info['num_glitches'] = math.inf
             info['num_glitches_percent'] = 100
 
@@ -84,23 +88,23 @@ class PmSATLearn:
         best_solution = None
         least_glitches = math.inf
 
-        self.log(f"Running pmSATLearn to try and find a solution with less than {target_glitch_percentage}% glitches", level=1)
+        logger.info(f"Running pmSATLearn to try and find a solution with less than {target_glitch_percentage}% glitches")
         for num_states in num_states_generator():
             solution = self.run_once(traces, num_states)
             num_glitches = len(solution[2]["glitch_steps"])
             percentage = self.get_glitch_percentage(traces, num_glitches)
 
             if percentage <= target_glitch_percentage:
-                self.log(f"Found {num_states}-state solution with {percentage:.2f}% glitches!", level=1)
+                logger.info(f"Found {num_states}-state solution with {percentage:.2f}% glitches!")
                 return solution
 
             if num_glitches < least_glitches:
                 least_glitches = num_glitches
                 best_solution = solution
 
-        self.log(f"After {num_states-initial_num_states} calls with num_states ranging from {initial_num_states} to {num_states}, "
+        logger.info(f"After {num_states-initial_num_states} calls with num_states ranging from {initial_num_states} to {num_states}, "
                  f"no solution with less than {self.get_glitch_percentage(traces, least_glitches):.2f}% glitches was found. "
-                 f"Returning solution with least glitches.", level=1)
+                 f"Returning solution with least glitches.")
         return best_solution
 
 
@@ -145,31 +149,26 @@ def run_activePmSATLearn(
     assert isinstance(eq_oracle, RobustEqOracleMixin), f"To ensure reliable counterexamples, a robust oracle must be passed."
     # additional input verification happens in run_pmSATLearn
 
-    def log(message: Any, level: int):
-        if print_level >= level:
-            if isinstance(message, str):
-                print(message)
-            else:
-                pprint(message)
+    logger.setLevel({0: logging.CRITICAL, 1: logging.INFO, 2: logging.DEBUG, 3: DEBUG_EXT}[print_level])
 
     all_input_combinations = list(itertools.product(alphabet, repeat=extension_length))
 
     def do_input_completeness_processing(current_hyp):
         return _do_input_completeness_processing(hyp=current_hyp, sul=sul, alphabet=alphabet,
-                                                 all_input_combinations=all_input_combinations, log=log)
+                                                 all_input_combinations=all_input_combinations)
 
     def do_cex_processing(current_cex):
-        return _do_cex_processing(sul=sul, cex=current_cex, all_input_combinations=all_input_combinations, log=log)
+        return _do_cex_processing(sul=sul, cex=current_cex, all_input_combinations=all_input_combinations)
 
     def do_glitch_processing(current_hyp: SupportedAutomaton, current_pmsat_info: dict[str, Any], current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
         return _do_glitch_processing(sul=sul, hyp=current_hyp, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
-                                     traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations, log=log)
+                                     traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations)
 
-    log(f"Creating initial traces...", level=2)
+    logger.debug(f"Creating initial traces...")
     traces = []
     for input_combination in all_input_combinations:
         traces.append(trace_query(sul, input_combination))
-    log(f"Initial traces: {traces}", level=3)
+    logger.debug_ext(f"Initial traces: {traces}")
 
     start_time = time.time()
     eq_query_time = 0
@@ -182,8 +181,7 @@ def run_activePmSATLearn(
                              pm_strategy=pm_strategy,
                              timeout=timeout,
                              cost_scheme=cost_scheme,
-                             print_info=print_level > 2,
-                             logging_func=log)
+                             print_info=print_level > 2)
 
     while True:
         learning_rounds += 1
@@ -195,10 +193,10 @@ def run_activePmSATLearn(
 
         direction, reason = choose_direction(hyp_small, pmsat_info_small, hyp_large, pmsat_info_large, traces)
         if direction == INCREASE:
-            log(f"Hypothesis with more states ({num_states+1}) was found to be better. Reason: {reason}", level=2)
+            logger.debug(f"Hypothesis with more states ({num_states+1}) was found to be better. Reason: {reason}")
             hyp, hyp_stoc, pmsat_info = hyp_large, hyp_stoc_large, pmsat_info_large
         else:
-            log(f"Hypothesis with fewer states ({num_states}) was found to be better. Reason {reason}", level=2)
+            logger.debug(f"Hypothesis with fewer states ({num_states}) was found to be better. Reason: {reason}")
             hyp, hyp_stoc, pmsat_info = hyp_small, hyp_stoc_small, pmsat_info_small
 
         detailed_learning_info[learning_rounds]["direction"] = "increase" if direction == INCREASE else "decrease"
@@ -256,12 +254,12 @@ def run_activePmSATLearn(
         detailed_learning_info[learning_rounds]["timed_out"] = pmsat_info["timed_out"]
 
         if hyp is not None and pmsat_info["is_sat"]:
-            log(f"pmSATLearn learned hypothesis with {len(hyp.states)} states", level=1)
+            logger.info(f"pmSATLearn learned hypothesis with {len(hyp.states)} states")
 
             if not hyp.is_input_complete():
                 hyp.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
 
-            log("Querying for counterexample...", level=2)
+            logger.debug("Querying for counterexample...")
             eq_query_start = time.time()
             cex, cex_outputs = eq_oracle.find_cex(hyp)  # TODO maybe collect multiple counterexamples?
             eq_query_time += time.time() - eq_query_start
@@ -274,9 +272,9 @@ def run_activePmSATLearn(
 
         if cex is None:
             if pmsat_info["is_sat"]:
-                log("No counterexample found. Returning hypothesis", level=1)
+                logger.info("No counterexample found. Returning hypothesis")
             else:
-                log("UNSAT! Returning None", level=1)
+                logger.info("UNSAT! Returning None")
 
             if return_data:
                 total_time = round(time.time() - start_time, 2)
@@ -285,7 +283,8 @@ def run_activePmSATLearn(
 
                 active_info = build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time,
                                               eq_query_time, pmsat_info, detailed_learning_info, hyp_stoc)
-                log(active_info, level=2)
+                if print_level > 1:
+                    print_learning_info(active_info)
 
                 return hyp, active_info
             else:
@@ -295,10 +294,10 @@ def run_activePmSATLearn(
         #          POST-PROCESSING          #
         #####################################
 
-        log(f"Counterexample {cex} found - process and continue learning", level=1)
+        logger.info(f"Counterexample {cex} found - process and continue learning")
 
         cex_trace = sul.query(tuple())[0], *zip(cex, cex_outputs)
-        log(f"Treating counterexample trace {cex_trace} as hard clause (currently in a hacky way)", level=2)
+        logger.debug(f"Treating counterexample trace {cex_trace} as hard clause (currently in a hacky way)")
         for _ in range(5):  # TODO insert as actual hard clause
             traces.append(cex_trace)
 
@@ -312,8 +311,8 @@ def run_activePmSATLearn(
             #      to be a glitch) in Partial MaxSAT
             remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)
 
-            log(f"Produced {len(postprocessing_additional_traces_glitch)} additional traces from glitch processing", level=2)
-            log(f"Additional traces from glitch processing: {postprocessing_additional_traces_glitch}", level=3)
+            logger.debug(f"Produced {len(postprocessing_additional_traces_glitch)} additional traces from glitch processing")
+            logger.debug_ext(f"Additional traces from glitch processing: {postprocessing_additional_traces_glitch}")
             detailed_learning_info[learning_rounds]["postprocessing_additional_traces_glitch"] = len(postprocessing_additional_traces_glitch)
 
             traces = traces + postprocessing_additional_traces_glitch
@@ -327,21 +326,21 @@ def run_activePmSATLearn(
             #      to be a glitch) in Partial MaxSAT
             remove_duplicate_traces(traces, postprocessing_additional_traces_cex)
 
-            log(f"Produced {len(postprocessing_additional_traces_cex)} additional traces from counterexample", level=2)
-            log(f"Additional traces from counterexample: {postprocessing_additional_traces_cex}", level=3)
+            logger.debug(f"Produced {len(postprocessing_additional_traces_cex)} additional traces from counterexample")
+            logger.debug_ext(f"Additional traces from counterexample: {postprocessing_additional_traces_cex}")
             detailed_learning_info[learning_rounds]["postprocessing_additional_traces_cex"] = len(postprocessing_additional_traces_cex)
 
             traces = traces + postprocessing_additional_traces_cex
 
         if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
-            log(f"No additional traces were produced during this round", level=2)
+            logger.debug(f"No additional traces were produced during this round")
 
         num_states = max(num_states + direction, get_num_outputs(traces))
 
 
 
 def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
-                                      all_input_combinations: list[tuple[Input, ...]], log=log_all) -> list[Trace]:
+                                      all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
     """
     Visit every state in the hypothesis and check if we have a transition for every input.
     If we don't have a transition there, query the SUL for additional traces of
@@ -353,9 +352,9 @@ def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL
     :param log: a function to log info to
     :return: a list of additional traces
     """
-    log("Try to force input completeness in hypothesis to produce new traces...", level=2)
+    logger.debug("Try to force input completeness in hypothesis to produce new traces...")
     if hyp.is_input_complete():
-        log("Hypothesis is already input complete. In the current implementation, this step won't be useful.", level=2)
+        logger.debug("Hypothesis is already input complete. In the current implementation, this step won't be useful.")
 
     hyp.compute_prefixes()
     new_traces = []
@@ -365,8 +364,8 @@ def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL
 
         for inp in alphabet:
             if inp not in state.transitions:
-                log(f"Hypothesis didn't have a transition from state {state.state_id} "
-                    f"(output='{state.output}', prefix={state.prefix}) with input '{inp}' - create traces!", level=2)
+                logger.debug(f"Hypothesis didn't have a transition from state {state.state_id} "
+                             f"(output='{state.output}', prefix={state.prefix}) with input '{inp}' - create traces!")
 
                 for suffix in all_input_combinations:
                     trace = trace_query(sul, list(state.prefix) + [inp] + list(suffix))
@@ -375,7 +374,7 @@ def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL
     return new_traces
 
 
-def _do_cex_processing(sul: SupportedSUL, cex: Trace, all_input_combinations: list[tuple[Input, ...]], log=log_all) -> list[Trace]:
+def _do_cex_processing(sul: SupportedSUL, cex: Trace, all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
     """
     Counterexample processing, like in Active RPNI
     :param sul: system under learning
@@ -384,7 +383,7 @@ def _do_cex_processing(sul: SupportedSUL, cex: Trace, all_input_combinations: li
     :param log: a function to log info to
     :return: list of new traces
     """
-    log("Processing counterexample to produce new traces...", level=2)
+    logger.debug("Processing counterexample to produce new traces...")
     new_traces = []
     for prefix in get_prefixes(cex):
         for suffix in all_input_combinations:
@@ -395,8 +394,7 @@ def _do_cex_processing(sul: SupportedSUL, cex: Trace, all_input_combinations: li
 
 
 def _do_glitch_processing(sul: SupportedSUL, hyp: SupportedAutomaton, pmsat_info: dict[str, Any], hyp_stoc: SupportedAutomaton,
-                         traces_used_to_learn_hyp: list[Trace], all_input_combinations: list[tuple[Input, ...]],
-                         log=log_all) -> list[Trace]:
+                         traces_used_to_learn_hyp: list[Trace], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
     """
     Glitch processing. For every glitched transition from state s with input i, query traces for
     s.prefix + i + (alphabet^extension_length). Note that only one prefix is queried, the one of the state with
@@ -409,7 +407,7 @@ def _do_glitch_processing(sul: SupportedSUL, hyp: SupportedAutomaton, pmsat_info
     :param log: a function to log info to
     :return: list of new traces
     """
-    log("Use glitched transitions to produce new traces...", level=2)
+    logger.debug("Use glitched transitions to produce new traces...")
     hyp_stoc.compute_prefixes()
     new_traces = []
     all_glitched_steps = [traces_used_to_learn_hyp[traces_index][trace_index] for (traces_index, trace_index) in
@@ -423,9 +421,8 @@ def _do_glitch_processing(sul: SupportedSUL, hyp: SupportedAutomaton, pmsat_info
                 glitched_input = get_input_from_stoc_trans(inp)
                 assert (glitched_input, next_state.output) in all_glitched_steps, (f"The tuple {(glitched_input, next_state.output)}" 
                                                                                    f"was not found in {all_glitched_steps=}")
-                log(f"Hypothesis contained a glitched transition from state {state.state_id} (output='{state.output}', "
-                    f"prefix={state_prefix}) with input '{glitched_input}' to state {next_state.state_id} - create traces!",
-                    level=2)
+                logger.debug(f"Hypothesis contained a glitched transition from state {state.state_id} (output='{state.output}', "
+                             f"prefix={state_prefix}) with input '{glitched_input}' to state {next_state.state_id} - create traces!")
 
                 assert (state.state_id, glitched_input, next_state.state_id) in pmsat_info["glitch_trans"], f"{pmsat_info['glitch_trans']=}"
 
@@ -472,6 +469,14 @@ def choose_direction(hyp_small: SupportedAutomaton, pmsat_info_small: dict[str, 
                      hyp_large: SupportedAutomaton, pmsat_info_large: dict[str, Any],
                      traces: list[Trace]) -> tuple[int, str]:
     assert id(hyp_large) != id(hyp_small)
+
+    if hyp_small is None and hyp_large is not None:
+        return INCREASE, "Failed to learn smaller hypothesis"
+    elif hyp_small is not None and hyp_large is None:
+        return DECREASE, "Failed to learn large hypothesis (how?)"
+    elif hyp_small is None and hyp_large is None:
+        return INCREASE, "Failed to learn both hypotheses"
+
     glitches_small = len(pmsat_info_small["glitch_steps"])
     glitches_large = len(pmsat_info_large["glitch_steps"])
 
@@ -534,7 +539,7 @@ def find_similar_frequencies(dominant_frequencies, glitched_frequencies, z_thres
 
     similar_frequencies = []
     for d in dominant_frequencies:
-        z_score = (d - mean_glitched) / std_glitched
+        z_score = (d - mean_glitched) / std_glitched  # TODO: what to do if glitches == 0?
         if abs(z_score) <= z_threshold:
             similar_frequencies.append(d)
 
@@ -562,3 +567,27 @@ def build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_tim
         'abort_reason': abort_reason,
     }
     return active_info
+
+
+def print_learning_info(info: dict[str, Any]):
+    """
+    Print learning statistics.
+    """
+    print('-----------------------------------')
+    print('Learning Finished.')
+    print('Learning Rounds:  {}'.format(info['learning_rounds']))
+    print('Number of states: {}'.format(info['learned_automaton_size']))
+    print('Time (in seconds)')
+    print('  Total                : {}'.format(info['total_time']))
+    print('  Learning algorithm   : {}'.format(info['learning_time']))
+    print('  Conformance checking : {}'.format(info['eq_oracle_time']))
+    print('Learning Algorithm')
+    print(' # Membership Queries  : {}'.format(info['queries_learning']))
+    if 'cache_saved' in info.keys():
+        print(' # MQ Saved by Caching : {}'.format(info['cache_saved']))
+    print(' # Steps               : {}'.format(info['steps_learning']))
+    print(' # Solver calls        : {}'.format(info['solver_calls']))
+    print('Equivalence Query')
+    print(' # Membership Queries  : {}'.format(info['queries_eq_oracle']))
+    print(' # Steps               : {}'.format(info['steps_eq_oracle']))
+    print('-----------------------------------')

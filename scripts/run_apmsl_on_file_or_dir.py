@@ -45,7 +45,7 @@ def main():
 
     for file in dot_files:
         sul = get_sul_from_file(file, glitch_percent)
-        oracle = get_oracle("Random", sul)
+        oracle = get_oracle("Perfect", sul)
 
         print(f"Learning {file}...")
         learned_model, info = run_activePmSATLearn(
@@ -55,8 +55,8 @@ def main():
             automaton_type="moore",
             extension_length=2,
             pm_strategy="rc2",
-            timeout=None,
-            print_level=2,
+            timeout=300,
+            print_level=3,
             return_data=True,
             input_completeness_processing=True,
             cex_processing=True,
