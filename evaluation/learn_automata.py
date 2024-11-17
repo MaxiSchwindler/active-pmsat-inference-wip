@@ -82,7 +82,7 @@ def check_equal(sul: MooreSUL, learned_mm: MooreMachine):
         # For the equality check, don't have the glitches
         sul = sul.sul
     perfect_oracle = RobustPerfectMooreOracle(sul)
-    cex = perfect_oracle.find_cex(learned_mm)
+    cex, cex_outputs = perfect_oracle.find_cex(learned_mm)
     return True if cex is None else False
 
 

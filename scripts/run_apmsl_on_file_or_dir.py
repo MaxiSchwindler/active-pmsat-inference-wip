@@ -61,7 +61,6 @@ def main():
             input_completeness_processing=True,
             cex_processing=True,
             glitch_processing=True,
-            allowed_glitch_percentage=glitch_percent * 2 if glitch_percent else 0
         )
 
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

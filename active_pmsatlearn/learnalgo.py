@@ -1,8 +1,11 @@
 import itertools
 import time
 import math
+import statistics
 from collections import defaultdict
 from pprint import pprint
+
+import numpy as np
 
 from aalpy.base import Oracle
 
@@ -10,6 +13,9 @@ from active_pmsatlearn.oracles import RobustEqOracleMixin
 from pmsatlearn import run_pmSATLearn
 
 from active_pmsatlearn.utils import *
+
+DECREASE = -1
+INCREASE = 1
 
 
 class PmSATLearn:
@@ -35,6 +41,7 @@ class PmSATLearn:
         self.log(f"Running pmSATLearn to learn a {num_states}-state automaton from {len(traces)} traces "
                  f"({self.num_calls_to_pmsat_learn}. call)", level=2)
         hyp, hyp_stoc, info = run_pmSATLearn(data=traces,
+                                             glitchless_data=[],
                                              n_states=num_states,
                                              automata_type=self.automata_type,
                                              pm_strategy=self.pm_strategy,
@@ -106,12 +113,9 @@ def run_activePmSATLearn(
     pm_strategy: Literal["lsu", "fm", "rc2"] = "rc2",
     timeout: int | float | None = None,
     cost_scheme: Literal["per_step", "per_transition"] = "per_step",
-    input_completeness_processing: bool = True,
+    input_completeness_processing: bool = False,
     cex_processing: bool = True,
-    glitch_processing: bool = True,
-    allowed_glitch_percentage: float = 0.0,
-    min_states: int | None = None,
-    max_states: int = 10,
+    glitch_processing: bool = False,
     return_data: bool = True,
     print_level: int | None = 2,
 ) -> (
@@ -132,10 +136,6 @@ def run_activePmSATLearn(
                                           before querying the oracle for a counterexample
     :param cex_processing: whether counterexample processing should be performed
     :param glitch_processing: whether glitch processing should be performed
-    :param min_states: The minimum number of states the SUL is expected to have.
-                       Ignored if the number of outputs is higher.
-    :param max_states: The maximum number of states the SUL is expected to have.
-    :param allowed_glitch_percentage: How many percent of steps can be assumed to be glitches.
     :param return_data: whether to return a dictionary containing learning information
     :param print_level: 0 - None,
                         1 - just results,
@@ -161,8 +161,8 @@ def run_activePmSATLearn(
     def do_cex_processing(current_cex):
         return _do_cex_processing(sul=sul, cex=current_cex, all_input_combinations=all_input_combinations, log=log)
 
-    def do_glitch_processing(current_pmsat_info: dict[str, Any], current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
-        return _do_glitch_processing(sul=sul, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
+    def do_glitch_processing(current_hyp: SupportedAutomaton, current_pmsat_info: dict[str, Any], current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
+        return _do_glitch_processing(sul=sul, hyp=current_hyp, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
                                      traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations, log=log)
 
     log(f"Creating initial traces...", level=2)
@@ -176,7 +176,8 @@ def run_activePmSATLearn(
     learning_rounds = 0
     detailed_learning_info = defaultdict(dict)
 
-    hyp = None
+    num_states = get_num_outputs(traces)
+
     pmsat_learn = PmSATLearn(automata_type=automaton_type,
                              pm_strategy=pm_strategy,
                              timeout=timeout,
@@ -187,34 +188,63 @@ def run_activePmSATLearn(
     while True:
         learning_rounds += 1
         detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
-        hyp, hyp_stoc, pmsat_info = pmsat_learn.run_multiple(traces=traces,
-                                                             min_states=min_states,
-                                                             max_states=max_states,
-                                                             initial_num_states=len(hyp.states) - 2 if hyp is not None else None,
-                                                             target_glitch_percentage=allowed_glitch_percentage)
+        hyp_small, hyp_stoc_small, pmsat_info_small = pmsat_learn.run_once(traces=traces,
+                                                                           num_states=num_states)
+        hyp_large, hyp_stoc_large, pmsat_info_large = pmsat_learn.run_once(traces=traces,
+                                                                           num_states=num_states + 1)
+
+        direction, reason = choose_direction(hyp_small, pmsat_info_small, hyp_large, pmsat_info_large, traces)
+        if direction == INCREASE:
+            log(f"Hypothesis with more states ({num_states+1}) was found to be better. Reason: {reason}", level=2)
+            hyp, hyp_stoc, pmsat_info = hyp_large, hyp_stoc_large, pmsat_info_large
+        else:
+            log(f"Hypothesis with fewer states ({num_states}) was found to be better. Reason {reason}", level=2)
+            hyp, hyp_stoc, pmsat_info = hyp_small, hyp_stoc_small, pmsat_info_small
+
+        detailed_learning_info[learning_rounds]["direction"] = "increase" if direction == INCREASE else "decrease"
+        detailed_learning_info[learning_rounds]["reason"] = reason
 
         #####################################
         #           PRE-PROCESSING          #
         #####################################
 
-        if hyp is not None and input_completeness_processing:
-            preprocessing_additional_traces = do_input_completeness_processing(hyp)
-
-            # TODO for now, we only add _new_ traces, to avoid huge number of traces
-            #      however, having the same trace multiple times (or weighting it)
-            #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
-            #      to be a glitch) in Partial MaxSAT
-            remove_duplicate_traces(traces, preprocessing_additional_traces)
-
-            log(f"Produced {len(preprocessing_additional_traces)} additional traces from counterexample", level=2)
-            detailed_learning_info[learning_rounds]["preprocessing_additional_traces"] = len(preprocessing_additional_traces)
-
-            if preprocessing_additional_traces:
-                log(f"Learning again after preprocessing with passive pmSATLearn (round {learning_rounds})...", level=2)
-                traces = traces + preprocessing_additional_traces
-                # TODO should this count as learning_round? we track the number of solver calls seperately
-                #  however, this would also overwrite this rounds detailed_learning_info (i.e. "preprocessing_additional_traces") - would needa a special case
-                continue  # jump back up and learn again
+        # if hyp is not None:
+        #     hyp.compute_prefixes()
+        #     if any(state.prefix is None for state in hyp.states) and get_num_outputs(traces) < num_states:
+        #         # if there is an unreachable state, we definitely learned with too many states
+        #         detailed_learning_info[learning_rounds]["decreased_due_to_unreachable_state"] = True
+        #         log(f"Unreachable state detected after learning with {num_states}! Learning again with {num_states-1}", level=2)
+        #         num_states = num_states - 1
+        #         continue  # jump back up
+        #
+        #     if cex_trace is not None:
+        #         hyp.reset_to_initial()
+        #         for inp, out in cex_trace[1:]:
+        #             if hyp.step(inp) != out:
+        #                 log("Old counterexample is not handled!", level=2)
+        #                 for _ in range(5):
+        #                     traces.append(cex_trace)
+        #                 continue
+        #
+        #     if input_completeness_processing:
+        #         preprocessing_additional_traces = do_input_completeness_processing(hyp)
+        #
+        #         # TODO for now, we only add _new_ traces, to avoid huge number of traces
+        #         #      however, having the same trace multiple times (or weighting it)
+        #         #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
+        #         #      to be a glitch) in Partial MaxSAT
+        #         remove_duplicate_traces(traces, preprocessing_additional_traces)
+        #
+        #         log(f"Produced {len(preprocessing_additional_traces)} additional traces from counterexample", level=2)
+        #         detailed_learning_info[learning_rounds]["preprocessing_additional_traces"] = len(preprocessing_additional_traces)
+        #
+        #         if preprocessing_additional_traces:
+        #             log(f"Learning again after preprocessing with passive pmSATLearn (round {learning_rounds})...", level=2)
+        #             traces = traces + preprocessing_additional_traces
+        #             num_states = max(num_states, get_num_outputs(traces))
+        #             # TODO should this count as learning_round? we track the number of solver calls seperately
+        #             #  however, this would also overwrite this rounds detailed_learning_info (i.e. "preprocessing_additional_traces") - would needa a special case
+        #             continue  # jump back up and learn again
 
         #####################################
         #              EQ-CHECK             #
@@ -237,7 +267,7 @@ def run_activePmSATLearn(
             eq_query_time += time.time() - eq_query_start
 
         else:
-            # UNSAT - set cex to None to enter next if
+            # UNSAT - set cex to None to enter next if  # TODO: we can probably be unsat if we don't have enough states, right? then we should repeat with more states
             cex = None
             hyp = None
             hyp_stoc = None
@@ -267,9 +297,14 @@ def run_activePmSATLearn(
 
         log(f"Counterexample {cex} found - process and continue learning", level=1)
 
+        cex_trace = sul.query(tuple())[0], *zip(cex, cex_outputs)
+        log(f"Treating counterexample trace {cex_trace} as hard clause (currently in a hacky way)", level=2)
+        for _ in range(5):  # TODO insert as actual hard clause
+            traces.append(cex_trace)
+
         if glitch_processing:
             # we have to do glitch processing first, before appending anything to traces!
-            postprocessing_additional_traces_glitch = do_glitch_processing(pmsat_info, hyp_stoc, traces)
+            postprocessing_additional_traces_glitch = do_glitch_processing(hyp, pmsat_info, hyp_stoc, traces)
 
             # TODO for now, we only add _new_ traces, to avoid huge number of traces
             #      however, having the same trace multiple times (or weighting it)
@@ -300,6 +335,9 @@ def run_activePmSATLearn(
 
         if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
             log(f"No additional traces were produced during this round", level=2)
+
+        num_states = max(num_states + direction, get_num_outputs(traces))
+
 
 
 def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
@@ -356,7 +394,7 @@ def _do_cex_processing(sul: SupportedSUL, cex: Trace, all_input_combinations: li
     return new_traces
 
 
-def _do_glitch_processing(sul: SupportedSUL, pmsat_info: dict[str, Any], hyp_stoc: SupportedAutomaton,
+def _do_glitch_processing(sul: SupportedSUL, hyp: SupportedAutomaton, pmsat_info: dict[str, Any], hyp_stoc: SupportedAutomaton,
                          traces_used_to_learn_hyp: list[Trace], all_input_combinations: list[tuple[Input, ...]],
                          log=log_all) -> list[Trace]:
     """
@@ -376,6 +414,7 @@ def _do_glitch_processing(sul: SupportedSUL, pmsat_info: dict[str, Any], hyp_sto
     new_traces = []
     all_glitched_steps = [traces_used_to_learn_hyp[traces_index][trace_index] for (traces_index, trace_index) in
                           pmsat_info["glitch_steps"]]
+    # all_glitched_trans = [() for (s0_id, inp, s1_id) in pmsat_info["glitch_trans"]]
 
     for state in hyp_stoc.states:
         for inp, next_state in state.transitions.items():
@@ -388,6 +427,8 @@ def _do_glitch_processing(sul: SupportedSUL, pmsat_info: dict[str, Any], hyp_sto
                     f"prefix={state_prefix}) with input '{glitched_input}' to state {next_state.state_id} - create traces!",
                     level=2)
 
+                assert (state.state_id, glitched_input, next_state.state_id) in pmsat_info["glitch_trans"], f"{pmsat_info['glitch_trans']=}"
+
                 for suffix in all_input_combinations:
                     trace = trace_query(sul, state_prefix + [glitched_input] + list(suffix))
                     new_traces.append(trace)
@@ -395,8 +436,114 @@ def _do_glitch_processing(sul: SupportedSUL, pmsat_info: dict[str, Any], hyp_sto
     return new_traces
 
 
+def calc_next_num_states(sul: SupportedSUL, curr_hyp: SupportedAutomaton, curr_pmsat_info: dict[str, Any],
+                         prev_hyp: SupportedAutomaton, prev_pmsat_info: dict[str, Any], current_cex_trace: Trace,
+                         traces_learnt_with: list[Trace], new_traces: list[Trace]):
+    assert id(curr_hyp) != id(prev_hyp)
+
+    if curr_hyp.size > get_num_outputs(traces_learnt_with):  # if we learn with the minimum number of states and get unreachable states, we can't do much
+        curr_hyp.compute_prefixes()
+        for state in curr_hyp.states:
+            assert state.prefix is not None, f"Unreachable state detected - this should already have been handled way before!"
+
+    if prev_hyp is None:  # no previous hypothesis (first round) - learn again with better data
+        return max(curr_states, get_num_outputs(new_traces))
+
+    complete_num_steps = sum(len(trace) for trace in traces_learnt_with)
+    curr_states = curr_hyp.size
+    prev_states = prev_hyp.size
+    curr_glitches = len(curr_pmsat_info["glitch_steps"]) / complete_num_steps
+    prev_glitches = len(prev_pmsat_info["glitch_steps"]) / complete_num_steps ## argh i dont know this
+
+    if curr_states > prev_states:
+        # we increased the number of states in the last round
+        if curr_glitches > prev_glitches:
+            # ... but the number of glitches increased -> we are moving away from our target. Reverse!
+            return curr_states - 1
+
+
+    # if not bisimilar(prev_hyp, curr_hyp):
+    #     return max(curr_states, get_num_outputs(new_traces))
+
+    return curr_states + 1
+
+
+def choose_direction(hyp_small: SupportedAutomaton, pmsat_info_small: dict[str, Any],
+                     hyp_large: SupportedAutomaton, pmsat_info_large: dict[str, Any],
+                     traces: list[Trace]) -> tuple[int, str]:
+    assert id(hyp_large) != id(hyp_small)
+    glitches_small = len(pmsat_info_small["glitch_steps"])
+    glitches_large = len(pmsat_info_large["glitch_steps"])
+
+    # inferred automata with increasing number of states n will always have the same or decreasing number of glitches
+    if glitches_large > glitches_small:
+        assert False, "Increasing the number of states should never lead to an increase in glitches!"
+    elif glitches_large == glitches_small:
+        # we increased the number of states, but the number of glitches stayed the same - didn't help
+        return DECREASE, "Equal number of glitches"
+    else:
+        # we increased the number of states, and the number of glitches went down.
+        # however, this does not automatically mean the larger hypothesis is "better" - we could have encoded glitches as true transitions
+        possible_encoded_glitches_small = find_similar_frequencies(dominant_frequencies=pmsat_info_small["dominant_delta_freq"],
+                                                                   glitched_frequencies=pmsat_info_small["glitched_delta_freq"],)
+        possible_encoded_glitches_large = find_similar_frequencies(dominant_frequencies=pmsat_info_large["dominant_delta_freq"],
+                                                                   glitched_frequencies=pmsat_info_large["glitched_delta_freq"],)
+        if possible_encoded_glitches_large <= possible_encoded_glitches_small:
+            # we have fewer glitches, and less or equal possible glitches in our dominant transitions -> larger was better
+            return INCREASE, (f"Fewer glitches and {'equal' if possible_encoded_glitches_large == possible_encoded_glitches_small else 'less'} "
+                              f"dominant transitions which could be glitches")
+        else:
+            # we have fewer glitches, but the number of possible glitches in our dominant transitions increased -> assume that smaller was better
+            return DECREASE, "Fewer glitches, but more dominant transitions which could be glitches"
+
+    assert False, "unreachable"
+
+    # Possible optimization: if large has unreachable states which small didn't have, we want to decrease
+    hyp_large.compute_prefixes()
+    for state in hyp_large.states:
+        if state.prefix is None:
+            # unreachable state in larger hypothesis - decrease
+            return DECREASE
+
+
+def compute_z_scores(dominant_frequencies, glitched_frequencies):
+    """
+    Compute the z scores of the dominant frequencies (in relation to dominant frequencies) and
+    of glitched frequencies (also in relation to dominant frequencies)
+    """
+    mean_dominant = statistics.mean(dominant_frequencies)
+    std_dev_dominant = statistics.stdev(dominant_frequencies)
+
+    if std_dev_dominant == 0:
+        z_scores_dominant = [0] * len(dominant_frequencies)
+        z_scores_glitched = [0] * len(glitched_frequencies)
+    else:
+        z_scores_dominant = [(f - mean_dominant) / std_dev_dominant for f in dominant_frequencies]
+        z_scores_glitched = [(g - mean_dominant) / std_dev_dominant for g in glitched_frequencies]
+
+    return z_scores_dominant, z_scores_glitched
+
+
+def find_similar_frequencies(dominant_frequencies, glitched_frequencies, z_threshold=1.0):
+    """
+    Calculate the z-score of the dominant frequency relative to the glitched list to find dominant frequencies
+    which are similar to glitched frequencies.
+    """
+    mean_glitched = np.mean(glitched_frequencies)
+    std_glitched = np.std(glitched_frequencies)
+
+    similar_frequencies = []
+    for d in dominant_frequencies:
+        z_score = (d - mean_glitched) / std_glitched
+        if abs(z_score) <= z_threshold:
+            similar_frequencies.append(d)
+
+    return similar_frequencies
+
+
 def build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time, eq_query_time,
                     last_pmsat_info, detailed_learning_info, hyp_stoc, abort_reason=None):
+    assert pmsat_learn.num_calls_to_pmsat_learn == learning_rounds * 2
     active_info = {
         'learning_rounds': learning_rounds,
         'learned_automaton_size': hyp.size if hyp is not None else None,

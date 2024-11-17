@@ -48,7 +48,7 @@ for combination in dict_product(apml_choices):
     for k, v in combination.items():
         if not v:
             alg_name += f"_no_{k}"
-    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=10*MINUTES, allowed_glitch_percentage=2.5, **combination, **common_args)
+    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=10*MINUTES, **combination, **common_args)
     algorithms[alg_name] = run_apml_config
 
 # add ActivePMSL(n)_only_<> combinations
