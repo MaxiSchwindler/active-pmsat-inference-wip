@@ -101,7 +101,7 @@ def generate_automata(automaton_type: Literal["mealy", "moore"],
         for current_num_inputs in parse_range(num_inputs):
             for current_num_outputs in parse_range(num_outputs):
                 automaton, file = generate_automaton(automaton_type,
-                                                     current_num_inputs, current_num_outputs, current_num_states,
+                                                     current_num_states, current_num_inputs, current_num_outputs,
                                                      destination_folder)
                 if automaton:
                     automata.append(automaton)

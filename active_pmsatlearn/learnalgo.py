@@ -16,6 +16,10 @@ from active_pmsatlearn.utils import *
 from active_pmsatlearn.log import get_logger, DEBUG_EXT
 logger = get_logger("APMSL")
 
+
+MAX_LEARNING_ROUNDS = 30
+
+
 DECREASE = -1
 INCREASE = 1
 
@@ -42,16 +46,16 @@ class PmSATLearn:
         self.num_calls_to_pmsat_learn += 1
         logger.debug(f"Running pmSATLearn to learn a {num_states}-state automaton from {len(traces)} traces "
                      f"({self.num_calls_to_pmsat_learn}. call)")
-        with override_print(override_with=logger.debug_ext):
-            from pmsatlearn import run_pmSATLearn
-            hyp, hyp_stoc, info = run_pmSATLearn(data=traces,
-                                                 glitchless_data=[],
-                                                 n_states=num_states,
-                                                 automata_type=self.automata_type,
-                                                 pm_strategy=self.pm_strategy,
-                                                 timeout=self.timeout,
-                                                 cost_scheme=self.cost_scheme,
-                                                 print_info=self.print_info)
+        # with override_print(override_with=logger.debug_ext):
+        from pmsatlearn import run_pmSATLearn
+        hyp, hyp_stoc, info = run_pmSATLearn(data=traces,
+                                             glitchless_data=[],
+                                             n_states=num_states,
+                                             automata_type=self.automata_type,
+                                             pm_strategy=self.pm_strategy,
+                                             timeout=self.timeout,
+                                             cost_scheme=self.cost_scheme,
+                                             print_info=self.print_info)
         if hyp:
             info['num_glitches'] = len(info['glitch_steps'])
             info['num_glitches_percent'] = self.get_glitch_percentage(traces, info['num_glitches'])
@@ -183,7 +187,7 @@ def run_activePmSATLearn(
                              cost_scheme=cost_scheme,
                              print_info=print_level > 2)
 
-    while True:
+    while learning_rounds < MAX_LEARNING_ROUNDS:
         learning_rounds += 1
         detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
         hyp_small, hyp_stoc_small, pmsat_info_small = pmsat_learn.run_once(traces=traces,
@@ -276,19 +280,7 @@ def run_activePmSATLearn(
             else:
                 logger.info("UNSAT! Returning None")
 
-            if return_data:
-                total_time = round(time.time() - start_time, 2)
-                eq_query_time = round(eq_query_time, 2)
-                learning_time = round(total_time - eq_query_time, 2)
-
-                active_info = build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time,
-                                              eq_query_time, pmsat_info, detailed_learning_info, hyp_stoc)
-                if print_level > 1:
-                    print_learning_info(active_info)
-
-                return hyp, active_info
-            else:
-                return hyp
+            break
 
         #####################################
         #          POST-PROCESSING          #
@@ -336,6 +328,23 @@ def run_activePmSATLearn(
             logger.debug(f"No additional traces were produced during this round")
 
         num_states = max(num_states + direction, get_num_outputs(traces))
+
+    if learning_rounds == MAX_LEARNING_ROUNDS:
+        logger.warning(f"Aborted learning after {learning_rounds} learning rounds")
+
+    if return_data:
+        total_time = round(time.time() - start_time, 2)
+        eq_query_time = round(eq_query_time, 2)
+        learning_time = round(total_time - eq_query_time, 2)
+
+        active_info = build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time,
+                                      eq_query_time, pmsat_info, detailed_learning_info, hyp_stoc)
+        if print_level > 1:
+            print_learning_info(active_info)
+
+        return hyp, active_info
+    else:
+        return hyp
 
 
 
@@ -472,7 +481,7 @@ def choose_direction(hyp_small: SupportedAutomaton, pmsat_info_small: dict[str, 
     if hyp_small is None and hyp_large is not None:
         return INCREASE, "Failed to learn smaller hypothesis"
     elif hyp_small is not None and hyp_large is None:
-        return DECREASE, "Failed to learn large hypothesis (how?)"
+        return DECREASE, "Failed to learn large hypothesis (how? Probably timeout?)"
     elif hyp_small is None and hyp_large is None:
         # doesn't matter what we give back, both are None
         return INCREASE, "Failed to learn both hypotheses"
@@ -490,18 +499,18 @@ def choose_direction(hyp_small: SupportedAutomaton, pmsat_info_small: dict[str, 
         return DECREASE, "Equal number of glitches"
     else:
         # we increased the number of states, and the number of glitches went down.
-        # however, this does not automatically mean the larger hypothesis is "better" - we could have encoded glitches as true transitions
+        # however, this does not automatically mean the larger hypothesis is "better" - we could have encoded glitches as dominant transitions
         possible_encoded_glitches_small = find_similar_frequencies(dominant_frequencies=pmsat_info_small["dominant_delta_freq"],
                                                                    glitched_frequencies=pmsat_info_small["glitched_delta_freq"],)
         possible_encoded_glitches_large = find_similar_frequencies(dominant_frequencies=pmsat_info_large["dominant_delta_freq"],
                                                                    glitched_frequencies=pmsat_info_large["glitched_delta_freq"],)
         if possible_encoded_glitches_large <= possible_encoded_glitches_small:
             # we have fewer glitches, and less or equal possible glitches in our dominant transitions -> larger was better
-            return INCREASE, (f"Fewer glitches and {'equal' if possible_encoded_glitches_large == possible_encoded_glitches_small else 'less'} "
+            return INCREASE, (f"Fewer glitches and {'equal' if possible_encoded_glitches_large == possible_encoded_glitches_small else 'fewer'} "
                               f"dominant transitions which could be glitches")
         else:
             # we have fewer glitches, but the number of possible glitches in our dominant transitions increased -> assume that smaller was better
-            return DECREASE, "Fewer glitches, but more dominant transitions which could be glitches"
+            return DECREASE, "Fewer glitches, but more dominant transitions which could be glitches"  # this can run endlessly
 
     assert False, "unreachable"
 
@@ -537,6 +546,7 @@ def find_similar_frequencies(dominant_frequencies, glitched_frequencies, z_thres
     which are similar to glitched frequencies.
     """
     if len(glitched_frequencies) == 0:
+        logger.warning("No glitched transitions given - cannot determine similar dominant frequencies")
         return []  # TODO: what to do if glitches == 0? there could be possible glitches in dominant freqs, but no way to compare...
 
     mean_glitched = np.mean(glitched_frequencies)

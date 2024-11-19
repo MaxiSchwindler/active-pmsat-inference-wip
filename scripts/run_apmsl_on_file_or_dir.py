@@ -55,7 +55,7 @@ def main():
             automaton_type="moore",
             extension_length=2,
             pm_strategy="rc2",
-            timeout=300,
+            timeout=1,
             print_level=3,
             return_data=True,
             input_completeness_processing=True,

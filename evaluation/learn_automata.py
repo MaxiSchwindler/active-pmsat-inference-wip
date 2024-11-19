@@ -179,7 +179,7 @@ def print_results_info(results: list[dict]):
     abort_reasons = set(r['abort_reason'] for r in valid_results if r.get('abort_reason', None) is not None)
 
     print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
-    print(f"Learned correctly: {num_learned} of {num_results} ({num_learned / num_results * 100:.2f}%)")
+    print(f"Learned correctly: {num_learned} of {num_valid} ({num_learned / num_valid * 100:.2f}%)")
     if num_aborted:
         print(f"Aborted: {num_aborted} of {num_results} ({num_aborted / num_results * 100:.2f}%)")
     for reason in abort_reasons:
@@ -258,8 +258,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     output_alphabet = set(s.output for s in automaton.states)
 
     if multiprocessing.parent_process():
-        alg_name = algorithm_name if not algorithm_name.startswith("ActivePMSL") else algorithm_name
-        set_current_process_name(f"{alg_name}_{multiprocessing.current_process().pid}")
+        set_current_process_name(f"{algorithm_name}_{multiprocessing.current_process().pid}")
 
     logger.info(f"Running {algorithm_name} with keywords {algorithm.unique_keywords} and oracle '{oracle_type}' on an "
                 f"automaton with {automaton.size} states, {len(automaton.get_input_alphabet())} inputs, {len(output_alphabet)} outputs. "
@@ -274,14 +273,14 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
         learned_model = None
         info = {'exception': repr(e)}
         import traceback
-        logger.warn("Unknown exception during algorithm call:\n", traceback.format_exc())
+        logger.warning(f"Unknown exception during algorithm call:\n {traceback.format_exc()}")
 
     learned_correctly = check_equal(sul, learned_model)
     if not learned_correctly:
         if learned_model:
-            logger.warn(f"{algorithm_name} did not learn correctly!")
+            logger.warning(f"{algorithm_name} did not learn correctly!")
         else:
-            logger.warn(f"{algorithm_name} returned no learned model")
+            logger.warning(f"{algorithm_name} returned no learned model")
 
     info["start_time"] = start_time
     info["algorithm_name"] = algorithm_name
@@ -327,11 +326,15 @@ def learn_automata(automata_type: str, automata_files: list[str],
     write_results_info(results_dir, automata_type, automata_files, algorithm_names, learn_num_times, max_num_steps,
                        oracle_types, results_dir)
 
-    pool = ProcessPool(max_workers=multiprocessing.cpu_count() // 2)
-    atexit.register(stop_remaining_jobs, pool)
+    if True:
+        pool = ProcessPool(max_workers=multiprocessing.cpu_count() // 2)
+        atexit.register(stop_remaining_jobs, pool)
 
-    futures = pool.map(learn_automaton_wrapper, all_combinations_n_times)
-    results = [f for f in futures.result()]
+        futures = pool.map(learn_automaton_wrapper, all_combinations_n_times)
+        results = [f for f in futures.result()]
+    else:
+        # dont use multiple processes (debugging)
+        results = [learn_automaton_wrapper(args) for args in all_combinations_n_times]
     print_results_info(results)
 
 
