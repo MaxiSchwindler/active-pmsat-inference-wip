@@ -12,6 +12,10 @@ def log(msg, level=INFO):
         print(msg)
 
 
+class NoMajorityTrace(Exception):
+    pass
+
+
 class RobustEqOracleMixin:
     """
     Mixin-class to make equality oracle robust against glitches in the SUL.
@@ -69,7 +73,8 @@ class RobustEqOracleMixin:
 
         elif majority_trace is None:
             # cannot handle this - in what state should the SUL be? (Maybe need to reset CEX search)? Maybe just discard last input?
-            raise NotImplementedError(f"For input sequence {inputs}, no output sequence occurred more than {self.threshold} times. ")
+            log(f"For input sequence {inputs}, no output sequence occurred more than {self.threshold} times. ")
+            raise NoMajorityTrace
 
         elif majority_trace == outputs_hyp:
             log(f"For input sequence {inputs}, the majority output sequence was identical to the hypothesis ({outputs_hyp}).")

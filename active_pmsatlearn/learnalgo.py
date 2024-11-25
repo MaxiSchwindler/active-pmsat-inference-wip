@@ -4,6 +4,7 @@ import time
 import math
 import statistics
 from collections import defaultdict
+from inspect import trace
 from pprint import pprint
 
 import numpy as np
@@ -123,7 +124,8 @@ def run_activePmSATLearn(
     cost_scheme: Literal["per_step", "per_transition"] = "per_step",
     input_completeness_processing: bool = False,
     cex_processing: bool = True,
-    glitch_processing: bool = False,
+    glitch_processing: bool = True,
+    trace_processing: bool = True,
     return_data: bool = True,
     print_level: int | None = 2,
 ) -> (
@@ -207,48 +209,6 @@ def run_activePmSATLearn(
         detailed_learning_info[learning_rounds]["reason"] = reason
 
         #####################################
-        #           PRE-PROCESSING          #
-        #####################################
-
-        # if hyp is not None:
-        #     hyp.compute_prefixes()
-        #     if any(state.prefix is None for state in hyp.states) and get_num_outputs(traces) < num_states:
-        #         # if there is an unreachable state, we definitely learned with too many states
-        #         detailed_learning_info[learning_rounds]["decreased_due_to_unreachable_state"] = True
-        #         log(f"Unreachable state detected after learning with {num_states}! Learning again with {num_states-1}", level=2)
-        #         num_states = num_states - 1
-        #         continue  # jump back up
-        #
-        #     if cex_trace is not None:
-        #         hyp.reset_to_initial()
-        #         for inp, out in cex_trace[1:]:
-        #             if hyp.step(inp) != out:
-        #                 log("Old counterexample is not handled!", level=2)
-        #                 for _ in range(5):
-        #                     traces.append(cex_trace)
-        #                 continue
-        #
-        #     if input_completeness_processing:
-        #         preprocessing_additional_traces = do_input_completeness_processing(hyp)
-        #
-        #         # TODO for now, we only add _new_ traces, to avoid huge number of traces
-        #         #      however, having the same trace multiple times (or weighting it)
-        #         #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
-        #         #      to be a glitch) in Partial MaxSAT
-        #         remove_duplicate_traces(traces, preprocessing_additional_traces)
-        #
-        #         log(f"Produced {len(preprocessing_additional_traces)} additional traces from counterexample", level=2)
-        #         detailed_learning_info[learning_rounds]["preprocessing_additional_traces"] = len(preprocessing_additional_traces)
-        #
-        #         if preprocessing_additional_traces:
-        #             log(f"Learning again after preprocessing with passive pmSATLearn (round {learning_rounds})...", level=2)
-        #             traces = traces + preprocessing_additional_traces
-        #             num_states = max(num_states, get_num_outputs(traces))
-        #             # TODO should this count as learning_round? we track the number of solver calls seperately
-        #             #  however, this would also overwrite this rounds detailed_learning_info (i.e. "preprocessing_additional_traces") - would needa a special case
-        #             continue  # jump back up and learn again
-
-        #####################################
         #              EQ-CHECK             #
         #####################################
 
@@ -326,6 +286,30 @@ def run_activePmSATLearn(
 
         if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
             logger.debug(f"No additional traces were produced during this round")
+
+        if trace_processing:
+            cex_inputs = [step[0] for step in cex_trace[1:]]
+            cex_outputs = [step[1] for step in cex_trace[1:]]
+
+            traces_to_remove = []
+            for t_i, trace in enumerate(traces):
+                assert cex_trace[0] == trace[0], f"Different initial outputs!"
+                trace_inputs = [step[0] for step in trace[1:]]
+                trace_outputs = [step[1] for step in trace[1:]]
+                for s_i in range(min(len(cex_inputs), len(trace_inputs))):
+                    if trace_inputs[s_i] != cex_inputs[s_i]:
+                        break
+                    if trace_outputs[s_i] != cex_outputs[s_i]:
+                        logger.debug(f"Different outputs at step {s_i}! CEX contains output '{cex_outputs[s_i]}' for input '{cex_inputs[s_i]}', but "
+                                     f"trace {t_i} ({trace}) contains '{trace_outputs[s_i]}'. Removing trace.")
+                        traces_to_remove.append(t_i)
+                        break
+                    assert trace_inputs[s_i] == cex_inputs[s_i]
+                    assert trace_outputs[s_i] == cex_outputs[s_i]
+
+            logger.debug(f"Removing {len(traces_to_remove)} traces because they were incongruent with counterexample")
+            detailed_learning_info[learning_rounds]["removed_traces"] = len(traces_to_remove)
+            traces = [t for t_i, t in enumerate(traces) if t_i not in traces_to_remove]
 
         num_states = max(num_states + direction, get_num_outputs(traces))
 

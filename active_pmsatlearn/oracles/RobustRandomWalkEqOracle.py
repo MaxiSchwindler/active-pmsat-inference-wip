@@ -2,7 +2,7 @@ import random
 
 from aalpy.base import Oracle, SUL
 
-from active_pmsatlearn.oracles.RobustEqOracleMixin import RobustEqOracleMixin
+from active_pmsatlearn.oracles.RobustEqOracleMixin import RobustEqOracleMixin, NoMajorityTrace
 
 
 ###
@@ -26,7 +26,7 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
     """
 
     def __init__(self, alphabet: list, sul: SUL, num_steps=50, reset_after_cex=True, reset_prob=0.09,
-                 perform_n_times=20, validity_threshold=0.51):
+                 perform_n_times=20, validity_threshold=0.51, max_num_tries=5):
         """
 
         Args:
@@ -45,6 +45,8 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
 
             validity_threshold: if a counterexample has been performed n times, n * validity_threshold traces
                 must be identical for the counterexample to be accepted (assumed to be glitchless). Must be > 0.5
+
+            max_num_tries: how many times finding a majority trace is attempted before returning "no counterexample"
                         """
 
         assert validity_threshold > 0.5
@@ -56,11 +58,13 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
         self.reset_prob = reset_prob
         self.random_steps_done = 0
         self.automata_type = 'det'
+        self.max_num_tries = max_num_tries
 
     def find_cex(self, hypothesis, return_outputs=True):
         inputs = []
         outputs_sul = []
         outputs_hyp = []
+        num_tries = 0
         self.reset_hyp_and_sul(hypothesis)
 
         while self.random_steps_done < self.step_limit:
@@ -83,7 +87,19 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
 
             if out_sul != out_hyp:
 
-                valid_cex, cex_inputs, cex_outputs = self.validate_counterexample(inputs, outputs_sul, outputs_hyp)
+                try:
+                    valid_cex, cex_inputs, cex_outputs = self.validate_counterexample(inputs, outputs_sul, outputs_hyp)
+                except NoMajorityTrace:
+                    num_tries += 1
+                    if num_tries >= self.max_num_tries:
+                        break
+                    else:
+                        self.reset_hyp_and_sul(hypothesis)
+                        inputs.clear()
+                        outputs_sul.clear()
+                        outputs_hyp.clear()
+                        continue
+
                 if not valid_cex:
                     outputs_sul.pop()
                     outputs_sul.append(cex_outputs[-1])
