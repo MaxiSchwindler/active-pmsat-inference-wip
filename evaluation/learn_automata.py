@@ -9,6 +9,7 @@ import uuid
 
 from datetime import datetime
 
+from aalpy import bisimilar
 from aalpy.utils import load_automaton_from_file
 from pebble import ProcessPool
 
@@ -175,15 +176,14 @@ def print_results_info(results: list[dict]):
     num_results = len(results)
     num_valid = len(valid_results)
     num_learned = sum(r['learned_correctly'] for r in results)
-    num_aborted = sum(r.get('abort_reason', None) is not None for r in valid_results)
-    abort_reasons = set(r['abort_reason'] for r in valid_results if r.get('abort_reason', None) is not None)
+    num_aborted = sum(r['timed_out'] for r in valid_results)
+    num_bisimilar = sum(r['bisimilar'] for r in results)
 
     print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
     print(f"Learned correctly: {num_learned} of {num_valid} ({num_learned / num_valid * 100:.2f}%)")
+    print(f"Bisimilar: {num_bisimilar} of {num_valid} ({num_bisimilar / num_valid * 100:.2f}%)")
     if num_aborted:
         print(f"Aborted: {num_aborted} of {num_results} ({num_aborted / num_results * 100:.2f}%)")
-    for reason in abort_reasons:
-        print(f"\tAbort reason '{reason}' occurred {sum(r.get('abort_reason', None) == reason for r in valid_results)} times")
     sep()
 
     num_automata = len(set(r['original_automaton'] for r in results))
@@ -286,6 +286,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     info["algorithm_name"] = algorithm_name
     info["oracle"] = oracle_type
     info["learned_correctly"] = learned_correctly
+    info["bisimilar"] = bisimilar(sul.automaton, learned_model) if learned_model is not None else False
 
     info["max_num_steps"] = max_num_steps
     info["glitch_percent"] = glitch_percent

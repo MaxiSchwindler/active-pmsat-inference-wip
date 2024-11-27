@@ -34,33 +34,31 @@ algorithms = {
     # "APMSL(2)_only_cex_processing
 }
 
-# keywords for APML
-apml_choices = dict(
-    extension_length=(2, 3, 4),
-    input_completeness_processing=(True, False),
-    cex_processing=(True, False),
-    glitch_processing=(True, False),
+apmsl_common_args = dict(
+    pm_strategy='rc2',
+    timeout=10*MINUTES,
 )
 
-# add all ActivePMSL(n)_no_<> combinations
-for combination in dict_product(apml_choices):
+apmsl_choices = dict(
+    extension_length=(2,),
+    # cex_processing=(True, False),
+    glitch_processing=(True, False),
+    discard_glitched_traces=(True, False),
+    add_cex_as_hard_clauses=(True, False),
+)
+
+# add all APMSL(n)_no_<> combinations
+for combination in dict_product(apmsl_choices):
     alg_name = f"APMSL({combination['extension_length']})"
     for k, v in combination.items():
         if not v:
             alg_name += f"_no_{''.join(a[0] for a in k.split('_'))}"
-    run_apml_config = partial(run_activePmSATLearn, pm_strategy='rc2', timeout=3*MINUTES, **combination, **common_args)
+    run_apml_config = partial(run_activePmSATLearn, **apmsl_common_args, **combination, **common_args)
     algorithms[alg_name] = run_apml_config
-
-# add ActivePMSL(n)_only_<> combinations
-for el in apml_choices['extension_length']:
-    alg_name = f"APMSL({el})"
-    algorithms[f"{alg_name}_only_icp"] = algorithms[f"{alg_name}_no_cp_no_gp"]
-    algorithms[f"{alg_name}_only_cp"] = algorithms[f"{alg_name}_no_icp_no_gp"]
-    algorithms[f"{alg_name}_only_gp"] = algorithms[f"{alg_name}_no_icp_no_cp"]
 
 # create .unique_keywords attribute
 for alg in algorithms.values():
-    alg.unique_keywords = {k: alg.keywords[k] for k in alg.keywords if k not in common_args}
+    alg.unique_keywords = {k: alg.keywords[k] for k in alg.keywords if k not in common_args and k not in apmsl_common_args}
 
 
 class RobustPerfectMooreOracle(RobustPerfectMooreEqOracle):
@@ -79,19 +77,8 @@ class RobustRandomWalkOracle(RobustRandomWalkEqOracle):
         )
 
 
-class RandomWMethodOracle(RandomWMethodEqOracle):
-    def __init__(self, sul: MooreSUL | MealySUL):
-        super().__init__(
-            alphabet=sul.automaton.get_input_alphabet(),
-            sul=sul,
-            walks_per_state=sul.automaton.size * 5,
-            walk_len=sul.automaton.size * 5
-        )
-
-
 oracles = {
     "Perfect": RobustPerfectMooreOracle,
     "Random": RobustRandomWalkOracle,
-    #"Random WMethod": RandomWMethodOracle,
 }
 

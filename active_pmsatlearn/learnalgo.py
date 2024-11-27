@@ -11,106 +11,16 @@ import numpy as np
 
 from aalpy.base import Oracle
 
+from pmsatlearn import run_pmSATLearn
+
 from active_pmsatlearn.oracles import RobustEqOracleMixin
 
 from active_pmsatlearn.utils import *
 from active_pmsatlearn.log import get_logger, DEBUG_EXT
 logger = get_logger("APMSL")
 
-
-MAX_LEARNING_ROUNDS = 30
-
-
 DECREASE = -1
 INCREASE = 1
-
-
-class PmSATLearn:
-    """ Small wrapper class around the pmSATLearn algorithm to keep track of the number of calls"""
-    def __init__(self, automata_type: str, pm_strategy: str, timeout: float | None, cost_scheme: str, print_info: bool,
-                 logging_func: callable = print, max_calls_per_round: int = 1):
-        self.automata_type = automata_type
-        self.pm_strategy = pm_strategy
-        self.timeout = timeout
-        self.cost_scheme = cost_scheme
-        self.print_info = print_info
-        self.num_calls_to_pmsat_learn = 0
-        self.log = logging_func
-        self.max_calls_per_round = max_calls_per_round
-
-    @staticmethod
-    def get_glitch_percentage(traces, num_glitches):
-        complete_num_steps = sum(len(trace) for trace in traces)
-        return num_glitches / complete_num_steps * 100
-
-    def run_once(self, traces: Sequence[Trace], num_states: int):
-        self.num_calls_to_pmsat_learn += 1
-        logger.debug(f"Running pmSATLearn to learn a {num_states}-state automaton from {len(traces)} traces "
-                     f"({self.num_calls_to_pmsat_learn}. call)")
-        # with override_print(override_with=logger.debug_ext):
-        from pmsatlearn import run_pmSATLearn
-        hyp, hyp_stoc, info = run_pmSATLearn(data=traces,
-                                             glitchless_data=[],
-                                             n_states=num_states,
-                                             automata_type=self.automata_type,
-                                             pm_strategy=self.pm_strategy,
-                                             timeout=self.timeout,
-                                             cost_scheme=self.cost_scheme,
-                                             print_info=self.print_info)
-        if hyp:
-            info['num_glitches'] = len(info['glitch_steps'])
-            info['num_glitches_percent'] = self.get_glitch_percentage(traces, info['num_glitches'])
-            logger.debug(f"pmSATLearn learned a hypothesis with {info['num_glitches']} glitches ({info['num_glitches_percent']:.2f}%)")
-        else:
-            logger.debug(f"pmSATLearn could not learn a hypothesis.")
-            info['num_glitches'] = math.inf
-            info['num_glitches_percent'] = 100
-
-        return hyp, hyp_stoc, info
-
-    def run_multiple(self,
-                     traces: Sequence[Trace],
-                     min_states: int | None = None, max_states: int = 10, initial_num_states: int | None = None,
-                     target_glitch_percentage: float = 0.0,
-                     ):
-        min_states = get_num_outputs(traces) if min_states is None else min_states
-        initial_num_states = max(min_states, initial_num_states) if initial_num_states is not None else min_states
-
-        assert min_states <= max_states, f"Minimum number of states {min_states} must be smaller than maximum {max_states}"
-
-        # TODO: use metrics (e.g. number of glitches that could be solved with adding only one state) to increase by
-        #  more than 1 - can i find that out?
-
-        def num_states_generator():
-            if initial_num_states != min_states:
-                yield initial_num_states
-
-            for s in range(min_states, max_states+1):
-                if initial_num_states != min_states and s == initial_num_states:
-                    continue
-                yield s
-
-        best_solution = None
-        least_glitches = math.inf
-
-        logger.info(f"Running pmSATLearn to try and find a solution with less than {target_glitch_percentage}% glitches")
-        for num_states in num_states_generator():
-            solution = self.run_once(traces, num_states)
-            num_glitches = len(solution[2]["glitch_steps"])
-            percentage = self.get_glitch_percentage(traces, num_glitches)
-
-            if percentage <= target_glitch_percentage:
-                logger.info(f"Found {num_states}-state solution with {percentage:.2f}% glitches!")
-                return solution
-
-            if num_glitches < least_glitches:
-                least_glitches = num_glitches
-                best_solution = solution
-
-        logger.info(f"After {num_states-initial_num_states} calls with num_states ranging from {initial_num_states} to {num_states}, "
-                 f"no solution with less than {self.get_glitch_percentage(traces, least_glitches):.2f}% glitches was found. "
-                 f"Returning solution with least glitches.")
-        return best_solution
 
 
 def run_activePmSATLearn(
@@ -125,7 +35,8 @@ def run_activePmSATLearn(
     input_completeness_processing: bool = False,
     cex_processing: bool = True,
     glitch_processing: bool = True,
-    trace_processing: bool = True,
+    discard_glitched_traces: bool = True,
+    add_cex_as_hard_clauses: bool = True,
     return_data: bool = True,
     print_level: int | None = 2,
 ) -> (
@@ -140,7 +51,8 @@ def run_activePmSATLearn(
     :param automaton_type: type of automaton to be learned. One of ["mealy", "moore"]
     :param extension_length: length of input combinations for initialisation and processing
     :param pm_strategy: strategy to be used by the solver
-    :param timeout: timeout for a single solver call (in seconds)
+    :param timeout: timeout for the entire call (in seconds). This currently only times the solver calls,
+                    i.e. equivalence or membership queries could be still performed after the timeout has been reached.
     :param cost_scheme: cost scheme for pmsat-learn
     :param input_completeness_processing: whether input completeness processing should be performed
                                           before querying the oracle for a counterexample
@@ -157,7 +69,18 @@ def run_activePmSATLearn(
 
     logger.setLevel({0: logging.CRITICAL, 1: logging.INFO, 2: logging.DEBUG, 3: DEBUG_EXT}[print_level])
 
+    start_time = time.time()
+    must_end_by = start_time + timeout if timeout is not None else 100 * 365 * 24 * 60 * 60  # no timeout -> must end in 100 years :)
+    eq_query_time = 0
+    learning_rounds = 0
+    detailed_learning_info = defaultdict(dict)
     all_input_combinations = list(itertools.product(alphabet, repeat=extension_length))
+    glitchless_traces = []
+
+    common_pmsatlearn_kwargs = dict(automata_type=automaton_type,
+                                    pm_strategy=pm_strategy,
+                                    cost_scheme=cost_scheme,
+                                    print_info=print_level > 2)
 
     def do_input_completeness_processing(current_hyp):
         return _do_input_completeness_processing(hyp=current_hyp, sul=sul, alphabet=alphabet,
@@ -166,36 +89,40 @@ def run_activePmSATLearn(
     def do_cex_processing(current_cex):
         return _do_cex_processing(sul=sul, cex=current_cex, all_input_combinations=all_input_combinations)
 
-    def do_glitch_processing(current_hyp: SupportedAutomaton, current_pmsat_info: dict[str, Any], current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
+    def do_glitch_processing(current_hyp: SupportedAutomaton, current_pmsat_info: dict[str, Any],
+                             current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
         return _do_glitch_processing(sul=sul, hyp=current_hyp, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
                                      traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations)
 
     logger.debug(f"Creating initial traces...")
-    traces = []
-    for input_combination in all_input_combinations:
-        traces.append(trace_query(sul, input_combination))
+    traces = [trace_query(sul, input_combination) for input_combination in all_input_combinations]
     logger.debug_ext(f"Initial traces: {traces}")
 
-    start_time = time.time()
-    eq_query_time = 0
-    learning_rounds = 0
-    detailed_learning_info = defaultdict(dict)
-
+    # start with minimum possible number of states
     num_states = get_num_outputs(traces)
 
-    pmsat_learn = PmSATLearn(automata_type=automaton_type,
-                             pm_strategy=pm_strategy,
-                             timeout=timeout,
-                             cost_scheme=cost_scheme,
-                             print_info=print_level > 2)
-
-    while learning_rounds < MAX_LEARNING_ROUNDS:
+    while not (timed_out := (time.time() >= must_end_by)):
         learning_rounds += 1
         detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
-        hyp_small, hyp_stoc_small, pmsat_info_small = pmsat_learn.run_once(traces=traces,
-                                                                           num_states=num_states)
-        hyp_large, hyp_stoc_large, pmsat_info_large = pmsat_learn.run_once(traces=traces,
-                                                                           num_states=num_states + 1)
+
+        #####################################
+        #              LEARNING             #
+        #####################################
+
+        logger.debug(f"Learning round {learning_rounds}: Running pmSATLearn to learn a {num_states}-state"
+                     f"and a {num_states+1}-state automaton from {len(traces)} traces")
+        logger.debug(f"Learning small ({num_states} state) hypothesis...")
+        hyp_small, hyp_stoc_small, pmsat_info_small = run_pmSATLearn(data=traces,
+                                                                     n_states=num_states,
+                                                                     timeout=max(must_end_by - time.time(), 0),
+                                                                     glitchless_data=glitchless_traces,
+                                                                     **common_pmsatlearn_kwargs)
+        logger.debug(f"Learning large ({num_states+1} state) hypothesis...")
+        hyp_large, hyp_stoc_large, pmsat_info_large = run_pmSATLearn(data=traces,
+                                                                     n_states=num_states + 1,
+                                                                     timeout=max(must_end_by - time.time(), 0),
+                                                                     glitchless_data=glitchless_traces,
+                                                                     **common_pmsatlearn_kwargs)
 
         direction, reason = choose_direction(hyp_small, pmsat_info_small, hyp_large, pmsat_info_large, traces)
         if direction == INCREASE:
@@ -221,15 +148,17 @@ def run_activePmSATLearn(
             logger.info(f"pmSATLearn learned hypothesis with {len(hyp.states)} states")
 
             if not hyp.is_input_complete():
-                hyp.make_input_complete()  # oracles (randomwalk, perfect) assume input completeness
+                hyp.make_input_complete()  # oracles assume input completeness
 
             logger.debug("Querying for counterexample...")
             eq_query_start = time.time()
-            cex, cex_outputs = eq_oracle.find_cex(hyp)  # TODO maybe collect multiple counterexamples?
+            cex, cex_outputs = eq_oracle.find_cex(hyp)
             eq_query_time += time.time() - eq_query_start
 
         else:
             # UNSAT - set cex to None to enter next if  # TODO: we can probably be unsat if we don't have enough states, right? then we should repeat with more states
+            if pmsat_info["timed_out"]:
+                timed_out = True
             cex = None
             hyp = None
             hyp_stoc = None
@@ -249,19 +178,18 @@ def run_activePmSATLearn(
         logger.info(f"Counterexample {cex} found - process and continue learning")
 
         cex_trace = sul.query(tuple())[0], *zip(cex, cex_outputs)
-        logger.debug(f"Treating counterexample trace {cex_trace} as hard clause (currently in a hacky way)")
-        for _ in range(5):  # TODO insert as actual hard clause
+        if add_cex_as_hard_clauses:
+            logger.debug(f"Treating counterexample trace {cex_trace} as hard clause")
+            glitchless_traces.append(cex_trace)
+        else:
+            logger.debug(f"Treating counterexample trace {cex_trace} as soft clause")
             traces.append(cex_trace)
 
         if glitch_processing:
             # we have to do glitch processing first, before appending anything to traces!
             postprocessing_additional_traces_glitch = do_glitch_processing(hyp, pmsat_info, hyp_stoc, traces)
 
-            # TODO for now, we only add _new_ traces, to avoid huge number of traces
-            #      however, having the same trace multiple times (or weighting it)
-            #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
-            #      to be a glitch) in Partial MaxSAT
-            remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)
+            remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)  # TODO: does de-duplication affect anything? check!
 
             logger.debug(f"Produced {len(postprocessing_additional_traces_glitch)} additional traces from glitch processing")
             logger.debug_ext(f"Additional traces from glitch processing: {postprocessing_additional_traces_glitch}")
@@ -272,11 +200,7 @@ def run_activePmSATLearn(
         if cex_processing:
             postprocessing_additional_traces_cex = do_cex_processing(cex)
 
-            # TODO for now, we only add _new_ traces, to avoid huge number of traces
-            #      however, having the same trace multiple times (or weighting it)
-            #      would 'tell' the solver that it is 'more important' (i.e. it is less likely
-            #      to be a glitch) in Partial MaxSAT
-            remove_duplicate_traces(traces, postprocessing_additional_traces_cex)
+            remove_duplicate_traces(traces, postprocessing_additional_traces_cex) # TODO: does de-duplication affect anything? check!
 
             logger.debug(f"Produced {len(postprocessing_additional_traces_cex)} additional traces from counterexample")
             logger.debug_ext(f"Additional traces from counterexample: {postprocessing_additional_traces_cex}")
@@ -287,25 +211,12 @@ def run_activePmSATLearn(
         if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
             logger.debug(f"No additional traces were produced during this round")
 
-        if trace_processing:
-            cex_inputs = [step[0] for step in cex_trace[1:]]
-            cex_outputs = [step[1] for step in cex_trace[1:]]
-
-            traces_to_remove = []
-            for t_i, trace in enumerate(traces):
-                assert cex_trace[0] == trace[0], f"Different initial outputs!"
-                trace_inputs = [step[0] for step in trace[1:]]
-                trace_outputs = [step[1] for step in trace[1:]]
-                for s_i in range(min(len(cex_inputs), len(trace_inputs))):
-                    if trace_inputs[s_i] != cex_inputs[s_i]:
-                        break
-                    if trace_outputs[s_i] != cex_outputs[s_i]:
-                        logger.debug(f"Different outputs at step {s_i}! CEX contains output '{cex_outputs[s_i]}' for input '{cex_inputs[s_i]}', but "
-                                     f"trace {t_i} ({trace}) contains '{trace_outputs[s_i]}'. Removing trace.")
-                        traces_to_remove.append(t_i)
-                        break
-                    assert trace_inputs[s_i] == cex_inputs[s_i]
-                    assert trace_outputs[s_i] == cex_outputs[s_i]
+        if discard_glitched_traces:
+            traces_to_remove = get_incongruent_traces(glitchless_trace=cex_trace, traces=traces)
+            for glitchless_trace in glitchless_traces:
+                if glitchless_trace == cex_trace:
+                    continue  # already handled above
+                traces_to_remove.update(get_incongruent_traces(glitchless_trace=glitchless_trace, traces=traces))
 
             logger.debug(f"Removing {len(traces_to_remove)} traces because they were incongruent with counterexample")
             detailed_learning_info[learning_rounds]["removed_traces"] = len(traces_to_remove)
@@ -313,16 +224,16 @@ def run_activePmSATLearn(
 
         num_states = max(num_states + direction, get_num_outputs(traces))
 
-    if learning_rounds == MAX_LEARNING_ROUNDS:
-        logger.warning(f"Aborted learning after {learning_rounds} learning rounds")
+    if timed_out:
+        logger.warning(f"Aborted learning after reaching timeout (start: {start_time:.2f}, now: {time.time():.2f}, timeout: {timeout})")
 
     if return_data:
         total_time = round(time.time() - start_time, 2)
         eq_query_time = round(eq_query_time, 2)
         learning_time = round(total_time - eq_query_time, 2)
 
-        active_info = build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time,
-                                      eq_query_time, pmsat_info, detailed_learning_info, hyp_stoc)
+        active_info = build_info_dict(hyp, sul, eq_oracle, learning_rounds, total_time, learning_time,
+                                      eq_query_time, pmsat_info, detailed_learning_info, hyp_stoc, timed_out)
         if print_level > 1:
             print_learning_info(active_info)
 
@@ -330,6 +241,27 @@ def run_activePmSATLearn(
     else:
         return hyp
 
+
+def get_incongruent_traces(glitchless_trace, traces) -> set[int]:
+    glitchlass_trace_inputs = [step[0] for step in glitchless_trace[1:]]
+    glitchless_trace_outputs = [step[1] for step in glitchless_trace[1:]]
+    traces_to_remove = set()
+    for t_i, trace in enumerate(traces):
+        assert glitchless_trace[0] == trace[0], f"Different initial outputs!"
+        trace_inputs = [step[0] for step in trace[1:]]
+        trace_outputs = [step[1] for step in trace[1:]]
+        for s_i in range(min(len(glitchlass_trace_inputs), len(trace_inputs))):
+            if trace_inputs[s_i] != glitchlass_trace_inputs[s_i]:
+                break
+            if trace_outputs[s_i] != glitchless_trace_outputs[s_i]:
+                logger.debug(
+                    f"Different outputs at step {s_i}! Glitchless trace contains output '{glitchless_trace_outputs[s_i]}' "
+                    f"for input '{glitchlass_trace_inputs[s_i]}', but trace {t_i} ({trace}) contains '{trace_outputs[s_i]}'. Removing trace.")
+                traces_to_remove.add(t_i)
+                break
+            assert trace_inputs[s_i] == glitchlass_trace_inputs[s_i]
+            assert trace_outputs[s_i] == glitchless_trace_outputs[s_i]
+    return traces_to_remove
 
 
 def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
@@ -426,38 +358,6 @@ def _do_glitch_processing(sul: SupportedSUL, hyp: SupportedAutomaton, pmsat_info
     return new_traces
 
 
-def calc_next_num_states(sul: SupportedSUL, curr_hyp: SupportedAutomaton, curr_pmsat_info: dict[str, Any],
-                         prev_hyp: SupportedAutomaton, prev_pmsat_info: dict[str, Any], current_cex_trace: Trace,
-                         traces_learnt_with: list[Trace], new_traces: list[Trace]):
-    assert id(curr_hyp) != id(prev_hyp)
-
-    if curr_hyp.size > get_num_outputs(traces_learnt_with):  # if we learn with the minimum number of states and get unreachable states, we can't do much
-        curr_hyp.compute_prefixes()
-        for state in curr_hyp.states:
-            assert state.prefix is not None, f"Unreachable state detected - this should already have been handled way before!"
-
-    if prev_hyp is None:  # no previous hypothesis (first round) - learn again with better data
-        return max(curr_states, get_num_outputs(new_traces))
-
-    complete_num_steps = sum(len(trace) for trace in traces_learnt_with)
-    curr_states = curr_hyp.size
-    prev_states = prev_hyp.size
-    curr_glitches = len(curr_pmsat_info["glitch_steps"]) / complete_num_steps
-    prev_glitches = len(prev_pmsat_info["glitch_steps"]) / complete_num_steps ## argh i dont know this
-
-    if curr_states > prev_states:
-        # we increased the number of states in the last round
-        if curr_glitches > prev_glitches:
-            # ... but the number of glitches increased -> we are moving away from our target. Reverse!
-            return curr_states - 1
-
-
-    # if not bisimilar(prev_hyp, curr_hyp):
-    #     return max(curr_states, get_num_outputs(new_traces))
-
-    return curr_states + 1
-
-
 def choose_direction(hyp_small: SupportedAutomaton, pmsat_info_small: dict[str, Any],
                      hyp_large: SupportedAutomaton, pmsat_info_large: dict[str, Any],
                      traces: list[Trace]) -> tuple[int, str]:
@@ -545,9 +445,8 @@ def find_similar_frequencies(dominant_frequencies, glitched_frequencies, z_thres
     return similar_frequencies
 
 
-def build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_time, learning_time, eq_query_time,
-                    last_pmsat_info, detailed_learning_info, hyp_stoc, abort_reason=None):
-    assert pmsat_learn.num_calls_to_pmsat_learn == learning_rounds * 2
+def build_info_dict(hyp, sul, eq_oracle, learning_rounds, total_time, learning_time, eq_query_time,
+                    last_pmsat_info, detailed_learning_info, hyp_stoc, timed_out):
     active_info = {
         'learning_rounds': learning_rounds,
         'learned_automaton_size': hyp.size if hyp is not None else None,
@@ -560,10 +459,9 @@ def build_info_dict(hyp, sul, eq_oracle, pmsat_learn, learning_rounds, total_tim
         'total_time': total_time,
         'cache_saved': sul.num_cached_queries,
         'last_pmsat_info': last_pmsat_info,
-        'solver_calls': pmsat_learn.num_calls_to_pmsat_learn,
         'detailed_learning_info': detailed_learning_info,
         'hyp_stoc': str(hyp_stoc) if hyp is not None else None,
-        'abort_reason': abort_reason,
+        'timed_out': timed_out,
     }
     return active_info
 
@@ -585,7 +483,6 @@ def print_learning_info(info: dict[str, Any]):
     if 'cache_saved' in info.keys():
         print(' # MQ Saved by Caching : {}'.format(info['cache_saved']))
     print(' # Steps               : {}'.format(info['steps_learning']))
-    print(' # Solver calls        : {}'.format(info['solver_calls']))
     print('Equivalence Query')
     print(' # Membership Queries  : {}'.format(info['queries_eq_oracle']))
     print(' # Steps               : {}'.format(info['steps_eq_oracle']))
