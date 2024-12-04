@@ -61,6 +61,7 @@ ENV/
 env.bak/
 venv.bak/
 wslvenv/
+wslvenv310/
 venv2/
 
 # PyCharm
@@ -75,3 +76,5 @@ venv2/
 
 # Learning results (for now)
 **/learning_results*/
+**/many_results*/
+**/some_results*/
