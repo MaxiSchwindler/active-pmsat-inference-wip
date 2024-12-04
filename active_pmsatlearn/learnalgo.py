@@ -380,6 +380,7 @@ def choose_direction(hyp_small: SupportedAutomaton, pmsat_info_small: dict[str, 
         assert False, "Increasing the number of states should never lead to an increase in glitches!"
     elif glitches_large == glitches_small:
         # we increased the number of states, but the number of glitches stayed the same - didn't help
+        # TODO: there could be cases where we only see an improvement after learning n+2 states...
         return DECREASE, "Equal number of glitches"
     else:
         # we increased the number of states, and the number of glitches went down.
