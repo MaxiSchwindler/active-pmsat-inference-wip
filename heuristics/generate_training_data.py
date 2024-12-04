@@ -1,0 +1,244 @@
+import argparse
+import csv
+import itertools
+import os
+import sys
+from asyncio import timeout
+from pprint import pprint
+from typing import Any
+
+import numpy as np
+from aalpy import load_automaton_from_file, MooreMachine
+from aalpy.SULs import MooreSUL
+
+from active_pmsatlearn.log import get_logger, set_current_process_name
+from active_pmsatlearn.utils import trace_query, get_num_outputs, Trace
+from evaluation.generate_automata import add_automata_generation_arguments
+from evaluation.learn_automata import get_all_automata_files_from_dir, get_generated_automata_files_to_learn
+from evaluation.utils import parse_range, new_file
+from pmsatlearn import run_pmSATLearn
+
+logger = get_logger(__name__)
+
+
+def _calculate_statistics(learned_model: MooreMachine, info: dict[str, Any], traces: list[Trace]) -> dict:
+    stats = dict()
+    complete_num_steps = sum(len(trace) for trace in traces)
+
+    # stats["num_states"] = len(learned_model.states)
+    learned_model.compute_prefixes()
+    stats["num_states_unreachable"] = sum(1 for state in learned_model.states if state.prefix is None)
+    stats["percent_states_unreachable"] = stats["num_states_unreachable"] / len(learned_model.states) * 100
+
+    #stats["num_glitches"] = len(info["glitch_steps"])
+    stats["percent_glitches"] = len(info["glitch_steps"]) / complete_num_steps * 100
+
+    stats["mean_glitch_trans_freq"] = np.mean(info["glitched_delta_freq"] or [np.nan])
+    stats["median_glitch_trans_freq"] = np.median(info["glitched_delta_freq"] or [np.nan])
+    stats["min_glitch_trans_freq"] = np.min(info["glitched_delta_freq"] or [np.nan])
+    stats["max_glitch_trans_freq"] = np.max(info["glitched_delta_freq"] or [np.nan])
+
+    stats["mean_dominant_trans_freq"] = np.mean(info["dominant_delta_freq"])
+    stats["median_dominant_trans_freq"] = np.median(info["dominant_delta_freq"])
+    stats["max_dominant_trans_freq"] = np.max(info["dominant_delta_freq"])
+    stats["min_dominant_trans_freq"] = np.min(info["dominant_delta_freq"])
+
+    # Convert numpy types to built-ins
+    stats = {
+        key: (value.item() if isinstance(value, (np.int64, np.float64)) else value)
+        for key, value in stats.items()
+    }
+
+    return stats
+
+
+def learn_automaton_and_calculate_stats(automaton: MooreMachine, min_num_states=1, max_num_states=10, extension_length=3, ):
+    inputs = list(itertools.product(automaton.get_input_alphabet(), repeat=extension_length))
+    sul = MooreSUL(automaton)
+    traces = [trace_query(sul, input_combination) for input_combination in inputs]
+
+    logger.info(f"Calculating stats for learning a MooreMachine with {len(automaton.states)} states, "
+                f"{len(automaton.get_input_alphabet())} inputs, {get_num_outputs(traces)} outputs. "
+                f"Learning with {min_num_states} states to {max_num_states} states, from {len(traces)} traces.")
+
+    results = {}
+    learned_models = []
+    for num_states in range(min_num_states, max_num_states + 1):
+        logger.info(f"Learning {num_states}-state automaton...")
+        learned_model, _, info = run_pmSATLearn(data=traces,
+                                                n_states=num_states,
+                                                automata_type="moore",
+                                                glitchless_data=[],
+                                                pm_strategy="rc2",
+                                                timeout=None,
+                                                cost_scheme="per_step",
+                                                print_info=False)
+        results[num_states] = _calculate_statistics(learned_model, info, traces) if learned_model is not None else None
+        learned_models.append(learned_model)
+
+    assert len(learned_models) == len(results)
+    # for num_states, result in results.items():
+    #     if result is not None:
+    #         assert num_states == result["num_states"], f"{num_states} != {results['num_states']}"
+
+    # ranking: [2, 1, 3] (lower=better) means that the model with index 0 (the one with the fewest states) is the second-best model, etc
+    indices = list(range(len(learned_models)))
+
+    def num_states_distance_to_orig_num_states(model_index, smaller_is_better=False):
+        model = learned_models[model_index]
+        if model is None:
+            return len(learned_models)
+
+        difference = len(automaton.states) - len(model.states)
+        learned_model_was_smaller_than_original = difference > 0
+        distance = abs(difference)
+
+        if learned_model_was_smaller_than_original:
+            if smaller_is_better:
+                distance -= 0.5  # subtract .5 from distance, such that it is smaller than the equivalent distance from a larger model
+        else:
+            if not smaller_is_better:
+                distance -= 0.5  # subtract .5 from distance, such that it is smaller than the equivalent distance from a smaller model
+
+        return distance
+
+    sorted_indices = sorted(indices, key=num_states_distance_to_orig_num_states)
+    results["ranking"] = sorted_indices
+
+    return results
+
+
+def write_stats_to_csv(stats: list[dict[int | str, dict[str, float] | None | list[int]]], csv_file):
+    if os.path.splitext(csv_file)[-1] != ".csv":
+        csv_file += ".csv"
+    logger.info(f"Writing stats to {csv_file}...")
+
+    stat_names = None
+
+    headers = set(k for stat in stats for k in stat.keys())
+    headers = sorted(headers, key=lambda x: x if isinstance(x, int) else float('inf'))
+    with open(csv_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        for results_for_one_automaton_multiple_num_states in stats:
+            # results_for_one_automaton_multiple_num_states = {1: {stat_name: ...}, 2: ...}
+            row = []
+            for column in headers:
+                entry = results_for_one_automaton_multiple_num_states[column]
+                if isinstance(column, str):
+                    assert column == "ranking"
+                    ranking = entry
+                    row.append(ranking)
+                elif isinstance(column, int):
+                    num_states = column
+                    single_result = entry
+                    if single_result is None:
+                        row.append(None)
+                    else:
+                        stats_as_list = []
+                        stat_names_ = []
+                        for stat_name, stat_val in single_result.items():
+                            stat_names_.append(f"'{stat_name}'")
+                            stats_as_list.append(stat_val)
+
+                        if stat_names is None:
+                            stat_names = stat_names_
+                            f.write("# stats: [" + ",".join(stat_names) + "]\n")
+                        else:
+                            assert stat_names == stat_names_, f"Different stat names in first row and current row! First row: {stat_names} | Current row: {stat_names_}"
+                        row.append(stats_as_list)
+                else:
+                    assert False
+            writer.writerow(row)
+
+    logger.info(f"Finished writing stats to {csv_file}.")
+
+
+def learn_automata_and_calculate_stats(automata: list[MooreMachine], *args, **kwargs):
+    stats = [learn_automaton_and_calculate_stats(a, *args, **kwargs) for a in automata]
+    pprint(stats)
+
+    csv_file = new_file("training_data.csv")
+    write_stats_to_csv(stats, csv_file)
+    return stats
+
+
+def learn_automata_from_files_and_calculate_stats(automata_files: list[str], *args, **kwargs):
+    return learn_automata_and_calculate_stats([load_automaton_from_file(automaton_file, 'moore') for automaton_file in automata_files],
+                                              *args, **kwargs)
+
+
+def main():
+    if len(sys.argv) > 1:
+        parser = argparse.ArgumentParser(description='Generate training data. Learn the same automaton with PMSATLearn, '
+                                                     'with different numbers of states, and collect the results.')
+        parser.add_argument('-mins', '--min_num_states', type=int, default=1,
+                            help='Minimum number of states to learn')
+        parser.add_argument('-maxs', '--max_num_states', type=int, default=10,
+                            help='Maximum number of states to learn')
+        parser.add_argument('-el', '--extension_length', type=int, default=3,
+                            help='Extension length to produce traces')
+
+        parser.add_argument('--learn_all_automata_from_dir', type=str,
+                            help='Learn all automata from a directory. If this directory is specified, '
+                                 'all arguments concerning automata generation except -t are ignored. '
+                                 'You have to ensure yourself that all of these automata are instances of the '
+                                 'automaton type given with -t.')
+        add_automata_generation_arguments(parser)
+        parser.add_argument('--reuse', type=bool, default=True,
+                            help="Whether to reuse existing automata or to force generation of new ones")
+        parser.add_argument('-rd', '--results_dir', type=str, default="learning_results",
+                            help='Directory to store results in.')
+        parser.add_argument('-pl', '--print_level', type=int, default=0,
+                            help="Print level for all algorithms. Usually ranges from 0 (nothing) to 3 (everything).")
+        args = parser.parse_args()
+
+        min_num_states = args.min_num_states
+        max_num_states = args.max_num_states
+        extension_length = args.extension_length
+
+        learn_from_dir = args.learn_all_automata_from_dir
+        num_automata_per_combination = args.num_automata_per_combination
+        automata_type = args.type
+        num_states = args.num_states
+        num_inputs = args.num_inputs
+        num_outputs = args.num_outputs
+        generated_automata_dir = args.generated_automata_dir
+        reuse_existing_automata = args.reuse
+
+    else:
+        min_num_states = int(input("Minimum number of states: "))
+        max_num_states = int(input("Maximum number of states: "))
+        extension_length = int(input("Extension length: "))
+
+        learn_from_dir = bool(input("Learn all automata from a directory? (y/n) (default: no): ") in ("y", "Y", "yes"))
+        if learn_from_dir:
+            learn_from_dir = input(f"Enter directory (all contained automata must be moore machines): ")
+        else:
+            num_automata_per_combination = int(input("Enter number of automata to generate/learn (default: 5): ") or 5)
+            num_states = parse_range(input("Enter number of states per automaton: "))
+            num_inputs = parse_range(input("Enter number of inputs per automaton: "))
+            num_outputs = parse_range(input("Enter number of outputs per automaton: "))
+            generated_automata_dir = input("Enter directory to store generated automata in: ") or "generated_automata"
+            reuse_existing_automata = input("Reuse existing automata? (y/n) (default: yes): ") in ("y", "Y", "yes", "")
+
+
+    if learn_from_dir:
+        logger.warning("Learning from directory has not been tested; confirm manually!")
+        files_to_learn = get_all_automata_files_from_dir(learn_from_dir)
+    else:
+        files_to_learn = get_generated_automata_files_to_learn(num_automata_per_combination, automata_type,
+                                                               num_states, num_inputs, num_outputs,
+                                                               generated_automata_dir, reuse_existing_automata)
+
+    set_current_process_name(os.path.basename(__file__))
+    learn_automata_from_files_and_calculate_stats(files_to_learn,
+                                                  min_num_states=min_num_states,
+                                                  max_num_states=max_num_states,
+                                                  extension_length=extension_length, )
+
+
+
+
+if __name__ == '__main__':
+    main()
