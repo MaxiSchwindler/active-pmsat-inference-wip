@@ -1,3 +1,7 @@
+"""
+Learn with a gradient-boosted decision tree, using lightGBM
+"""
+
 import sys
 
 import pandas as pd
@@ -15,11 +19,11 @@ def load_data_from_csv(csv_file):
     logger.info(f'Loading data from {csv_file}')
     df = pd.read_csv(csv_file, comment='#')
 
-    # extract comment which tells us stat names
+    # extract comment which tells us metric names
     with open(csv_file, 'r') as f:
         while not (line := f.readline()).startswith("#"):
             pass
-        stat_names = ast.literal_eval(line.split("# stats: ")[1])
+        metric_names = ast.literal_eval(line.split("# metrics: ")[1])
 
     automata_results = []
     rankings = []
@@ -33,23 +37,30 @@ def load_data_from_csv(csv_file):
                 else:
                     string = string.replace('nan', 'None')
                     return ast.literal_eval(string)
-            stats = [str_to_py(row[num_states_str]) for num_states_str in row.keys() if num_states_str != 'ranking']
-            ranking = ast.literal_eval(row['ranking'])
+            metrics = [str_to_py(row[num_states_str]) for num_states_str in row.keys() if num_states_str != 'ranking']
+            distances = ast.literal_eval(row['distances'])
 
-            num = len(stats)
+            num = len(metrics)
             for i in reversed(range(num)):
-                if stats[i] is None:
-                    stats.pop(i)
-                    ranking.pop(i)
+                if metrics[i] is None:
+                    metrics.pop(i)
+                    distances.pop(i)
 
         except Exception as e:
             raise type(e)(f"{str(e)} (occurred in row {r_idx}:\n{row}\n)")
 
-        automata_results.extend(stats)
-        rankings.extend(ranking)
-        group.append(len(stats))
+        automata_results.extend(metrics)
 
-    dataset = lgb.Dataset(np.array(automata_results), label=np.array(rankings), group=group, feature_name=stat_names)
+        ranking = []
+        for distance in distances:
+            if distance < 0:
+                distance = abs(distance) + 0.5
+            ranking.append(distance)
+
+        rankings.extend(ranking)
+        group.append(len(metrics))
+
+    dataset = lgb.Dataset(np.array(automata_results), label=np.array(rankings), group=group, feature_name=metric_names)
     return dataset
 
 
