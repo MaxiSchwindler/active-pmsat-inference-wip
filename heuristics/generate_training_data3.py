@@ -1,13 +1,16 @@
 import argparse
+import ast
 import csv
 import itertools
 import os
 import sys
+import uuid
 from asyncio import timeout
 from pprint import pprint
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from aalpy import load_automaton_from_file, MooreMachine
 from aalpy.SULs import MooreSUL
 
@@ -21,16 +24,16 @@ from pmsatlearn import run_pmSATLearn
 logger = get_logger(__name__)
 
 
-def _calculate_metrics(learned_model: MooreMachine, info: dict[str, Any], traces: list[Trace]) -> dict:
+def _calculate_metrics(learned_model: MooreMachine, info: dict[str, Any], traces: list[Trace]) -> dict[str, float]:
     metrics = dict()
     complete_num_steps = sum(len(trace) for trace in traces)
 
-    # metrics["num_states"] = len(learned_model.states)
+    metrics["num_states"] = len(learned_model.states)
     learned_model.compute_prefixes()
     metrics["num_states_unreachable"] = sum(1 for state in learned_model.states if state.prefix is None)
     metrics["percent_states_unreachable"] = metrics["num_states_unreachable"] / len(learned_model.states) * 100
 
-    #metrics["num_glitches"] = len(info["glitch_steps"])
+    metrics["num_glitches"] = len(info["glitch_steps"])
     metrics["percent_glitches"] = len(info["glitch_steps"]) / complete_num_steps * 100
 
     metrics["mean_glitch_trans_freq"] = np.mean(info["glitched_delta_freq"] or [np.nan])
@@ -43,6 +46,9 @@ def _calculate_metrics(learned_model: MooreMachine, info: dict[str, Any], traces
     metrics["max_dominant_trans_freq"] = np.max(info["dominant_delta_freq"])
     metrics["min_dominant_trans_freq"] = np.min(info["dominant_delta_freq"])
 
+    metrics["glitched_delta_freq"] = info["glitched_delta_freq"]
+    metrics["dominant_delta_freq"] = info["dominant_delta_freq"]
+
     # Convert numpy types to built-ins
     metrics = {
         key: (value.item() if isinstance(value, (np.int64, np.float64)) else value)
@@ -52,90 +58,68 @@ def _calculate_metrics(learned_model: MooreMachine, info: dict[str, Any], traces
     return metrics
 
 
-def learn_automaton_and_calculate_metrics(automaton: MooreMachine, min_num_states=1, max_num_states=10, extension_length=3, ):
+def learn_automaton_and_calculate_metrics(automaton: MooreMachine, diff_min_states=3, diff_max_states=3, extension_length=3, ) -> list[dict[str, float]]:
     inputs = list(itertools.product(automaton.get_input_alphabet(), repeat=extension_length))
     sul = MooreSUL(automaton)
     traces = [trace_query(sul, input_combination) for input_combination in inputs]
 
+    orig_num_states = len(automaton.states)
+    min_states = orig_num_states - diff_min_states
+    max_states = orig_num_states + diff_max_states
     logger.info(f"Calculating metrics for learning a MooreMachine with {len(automaton.states)} states, "
                 f"{len(automaton.get_input_alphabet())} inputs, {get_num_outputs(traces)} outputs. "
-                f"Learning with {min_num_states} states to {max_num_states} states, from {len(traces)} traces.")
+                f"Learning with {min_states} states to {max_states} states, from {len(traces)} traces.")
 
-    results = {}
-    learned_models = []
-    for num_states in range(min_num_states, max_num_states + 1):
+    results = []
+    automaton_uid = uuid.uuid4().hex
+    for num_states in range(min_states, max_states + 1):
         logger.info(f"Learning {num_states}-state automaton...")
         learned_model, _, info = run_pmSATLearn(data=traces,
                                                 n_states=num_states,
                                                 automata_type="moore",
                                                 glitchless_data=[],
                                                 pm_strategy="rc2",
-                                                timeout=None,
+                                                timeout=5*60,
                                                 cost_scheme="per_step",
                                                 print_info=False)
-        results[num_states] = _calculate_metrics(learned_model, info, traces) if learned_model is not None else None
-        learned_models.append(learned_model)
+        result = _calculate_metrics(learned_model, info, traces) if learned_model is not None else {}
+        additional_knowledge = {
+            "distance": num_states - len(automaton.states),
+            "automaton": automaton_uid,
+            "num_traces": len(traces)
+        }
+        results.append(additional_knowledge | result)
+        # for metric_name, metric_value in result.items():
+        #     if metric_name not in results:
+        #         results[metric_name] = []
+        #     results[metric_name].append(metric_value)
 
-    assert len(learned_models) == len(results)
-    # for num_states, result in results.items():
-    #     if result is not None:
-    #         assert num_states == result["num_states"], f"{num_states} != {results['num_states']}"
-
-    results["distances"] = [len(automaton.states) - (len(learned_model.states)
-                                                     if learned_model is not None
-                                                     else 0)
-                            for learned_model in learned_models]
     return results
 
 
-def write_metrics_to_csv(metrics: list[dict[int | str, dict[str, float] | None | list[int]]], csv_file):
+def write_metrics_to_csv(metrics: list[dict[str, float]], csv_file):
     if os.path.splitext(csv_file)[-1] != ".csv":
         csv_file += ".csv"
     logger.info(f"Writing metrics to {csv_file}...")
 
-    metric_names = None
+    max_fields = -1
+    for result in metrics:
+        if len(result.keys()) > max_fields:
+            fieldnames = list(result.keys())
+            max_fields = len(fieldnames)
 
-    headers = set(k for metric in metrics for k in metric.keys())
-    headers = sorted(headers, key=lambda x: x if isinstance(x, int) else float('inf'))
     with open(csv_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(headers)
-        for results_for_one_automaton_multiple_num_states in metrics:
-            # results_for_one_automaton_multiple_num_states = {1: {metric_name: ...}, 2: ...}
-            row = []
-            for column in headers:
-                entry = results_for_one_automaton_multiple_num_states[column]
-                if isinstance(column, str):
-                    assert column == "distances"
-                    row.append(entry)
-                elif isinstance(column, int):
-                    num_states = column
-                    single_result = entry
-                    if single_result is None:
-                        row.append(None)
-                    else:
-                        metric_values_as_list = []
-                        metric_names_ = []
-                        for metric_name, metric_val in single_result.items():
-                            metric_names_.append(f"'{metric_name}'")
-                            metric_values_as_list.append(metric_val)
-
-                        if metric_names is None:
-                            metric_names = metric_names_
-                            f.write("# metrics: [" + ",".join(metric_names) + "]\n")
-                        else:
-                            assert metric_names == metric_names_, f"Different metric names in first row and current row! First row: {metric_names} | Current row: {metric_names_}"
-                        row.append(metric_values_as_list)
-                else:
-                    assert False
-            writer.writerow(row)
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(metrics)
 
     logger.info(f"Finished writing metrics to {csv_file}.")
 
 
-def learn_automata_and_calculate_metrics(automata: list[MooreMachine], *args, **kwargs):
-    metrics = [learn_automaton_and_calculate_metrics(a, *args, **kwargs) for a in automata]
-    pprint(metrics)
+def learn_automata_and_calculate_metrics(automata: list[MooreMachine], *args, **kwargs) -> list[dict[str, float]]:
+    metrics = learn_automaton_and_calculate_metrics(automata[0], *args, **kwargs)
+    for a in automata[1:]:
+        metrics.extend(learn_automaton_and_calculate_metrics(a, *args, **kwargs))
 
     csv_file = new_file("training_data.csv")
     write_metrics_to_csv(metrics, csv_file)
@@ -152,10 +136,10 @@ def main():
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(description='Generate training data. Learn the same automaton with PMSATLearn, '
                                                      'with different numbers of states, and collect the results.')
-        parser.add_argument('-mins', '--min_num_states', type=int, default=1,
-                            help='Minimum number of states to learn')
-        parser.add_argument('-maxs', '--max_num_states', type=int, default=10,
-                            help='Maximum number of states to learn')
+        parser.add_argument('-dmin', '--diff_min_states', type=int, default=3,
+                            help='Difference of minimum number states to learn to real number of states')
+        parser.add_argument('-dmax', '--diff_max_states', type=int, default=3,
+                            help='Difference of maximum number states to learn to real number of states')
         parser.add_argument('-el', '--extension_length', type=int, default=3,
                             help='Extension length to produce traces')
 
@@ -173,8 +157,8 @@ def main():
                             help="Print level for all algorithms. Usually ranges from 0 (nothing) to 3 (everything).")
         args = parser.parse_args()
 
-        min_num_states = args.min_num_states
-        max_num_states = args.max_num_states
+        diff_min_states = args.diff_min_states
+        diff_max_states = args.diff_max_states
         extension_length = args.extension_length
 
         learn_from_dir = args.learn_all_automata_from_dir
@@ -187,8 +171,8 @@ def main():
         reuse_existing_automata = args.reuse
 
     else:
-        min_num_states = int(input("Minimum number of states: "))
-        max_num_states = int(input("Maximum number of states: "))
+        diff_min_states = int(input("Difference of minimum number states to learn to real number of states: "))
+        diff_max_states = int(input("Difference of maximum number states to learn to real number of states: "))
         extension_length = int(input("Extension length: "))
 
         learn_from_dir = bool(input("Learn all automata from a directory? (y/n) (default: no): ") in ("y", "Y", "yes"))
@@ -213,8 +197,8 @@ def main():
 
     set_current_process_name(os.path.basename(__file__))
     learn_automata_from_files_and_calculate_metrics(files_to_learn,
-                                                    min_num_states=min_num_states,
-                                                    max_num_states=max_num_states,
+                                                    diff_min_states=diff_min_states,
+                                                    diff_max_states=diff_max_states,
                                                     extension_length=extension_length, )
 
 

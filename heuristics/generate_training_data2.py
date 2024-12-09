@@ -1,4 +1,5 @@
 import argparse
+import ast
 import csv
 import itertools
 import os
@@ -8,6 +9,7 @@ from pprint import pprint
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from aalpy import load_automaton_from_file, MooreMachine
 from aalpy.SULs import MooreSUL
 
@@ -52,18 +54,21 @@ def _calculate_metrics(learned_model: MooreMachine, info: dict[str, Any], traces
     return metrics
 
 
-def learn_automaton_and_calculate_metrics(automaton: MooreMachine, min_num_states=1, max_num_states=10, extension_length=3, ):
+def learn_automaton_and_calculate_metrics(automaton: MooreMachine, diff_min_states=3, diff_max_states=3, extension_length=3, ):
     inputs = list(itertools.product(automaton.get_input_alphabet(), repeat=extension_length))
     sul = MooreSUL(automaton)
     traces = [trace_query(sul, input_combination) for input_combination in inputs]
 
     logger.info(f"Calculating metrics for learning a MooreMachine with {len(automaton.states)} states, "
                 f"{len(automaton.get_input_alphabet())} inputs, {get_num_outputs(traces)} outputs. "
-                f"Learning with {min_num_states} states to {max_num_states} states, from {len(traces)} traces.")
+                f"Learning with {diff_min_states} states to {diff_max_states} states, from {len(traces)} traces.")
 
     results = {}
     learned_models = []
-    for num_states in range(min_num_states, max_num_states + 1):
+    orig_num_states = len(automaton.states)
+    min_states = orig_num_states - diff_min_states
+    max_states = orig_num_states + diff_max_states
+    for num_states in range(min_states, max_states + 1):
         logger.info(f"Learning {num_states}-state automaton...")
         learned_model, _, info = run_pmSATLearn(data=traces,
                                                 n_states=num_states,
@@ -73,7 +78,7 @@ def learn_automaton_and_calculate_metrics(automaton: MooreMachine, min_num_state
                                                 timeout=None,
                                                 cost_scheme="per_step",
                                                 print_info=False)
-        results[num_states] = _calculate_metrics(learned_model, info, traces) if learned_model is not None else None
+        results[num_states - orig_num_states] = _calculate_metrics(learned_model, info, traces) if learned_model is not None else None
         learned_models.append(learned_model)
 
     assert len(learned_models) == len(results)
@@ -81,21 +86,17 @@ def learn_automaton_and_calculate_metrics(automaton: MooreMachine, min_num_state
     #     if result is not None:
     #         assert num_states == result["num_states"], f"{num_states} != {results['num_states']}"
 
-    results["distances"] = [len(automaton.states) - (len(learned_model.states)
-                                                     if learned_model is not None
-                                                     else 0)
-                            for learned_model in learned_models]
     return results
 
 
-def write_metrics_to_csv(metrics: list[dict[int | str, dict[str, float] | None | list[int]]], csv_file):
+def write_metrics_to_csv(metrics: list[dict[int, dict[str, float] | None]], csv_file):
     if os.path.splitext(csv_file)[-1] != ".csv":
         csv_file += ".csv"
     logger.info(f"Writing metrics to {csv_file}...")
 
     metric_names = None
 
-    headers = set(k for metric in metrics for k in metric.keys())
+    headers = set(k for stat in metrics for k in stat.keys())
     headers = sorted(headers, key=lambda x: x if isinstance(x, int) else float('inf'))
     with open(csv_file, "w", newline="") as f:
         writer = csv.writer(f)
@@ -133,6 +134,35 @@ def write_metrics_to_csv(metrics: list[dict[int | str, dict[str, float] | None |
     logger.info(f"Finished writing metrics to {csv_file}.")
 
 
+def parse_metrics_from_csv(csv_file):
+    logger.info(f'Loading data from {csv_file}')
+    df = pd.read_csv(csv_file, comment='#')
+
+    # extract comment which tells us metric names
+    with open(csv_file, 'r') as f:
+        while not (line := f.readline()).startswith("#"):
+            pass
+        metric_names = ast.literal_eval(line.split("# metrics: ")[1])
+
+    results = []
+
+    for r_idx, row in df.iterrows():
+        try:
+            def str_to_py(string):
+                if string in (None, np.nan):
+                    return []
+                else:
+                    string = string.replace('nan', 'None')
+                    return ast.literal_eval(string)
+
+            metrics = {num_states_str: dict(zip(metric_names, str_to_py(row[num_states_str]))) for num_states_str in row.keys()}
+            results.append(metrics)
+
+        except Exception as e:
+            raise type(e)(f"{str(e)} (occurred in row {r_idx}:\n{row}\n)")
+
+    return results
+
 def learn_automata_and_calculate_metrics(automata: list[MooreMachine], *args, **kwargs):
     metrics = [learn_automaton_and_calculate_metrics(a, *args, **kwargs) for a in automata]
     pprint(metrics)
@@ -152,10 +182,10 @@ def main():
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(description='Generate training data. Learn the same automaton with PMSATLearn, '
                                                      'with different numbers of states, and collect the results.')
-        parser.add_argument('-mins', '--min_num_states', type=int, default=1,
-                            help='Minimum number of states to learn')
-        parser.add_argument('-maxs', '--max_num_states', type=int, default=10,
-                            help='Maximum number of states to learn')
+        parser.add_argument('-dmin', '--diff_min_states', type=int, default=3,
+                            help='Difference of minimum number states to learn to real number of states')
+        parser.add_argument('-dmax', '--diff_max_states', type=int, default=3,
+                            help='Difference of maximum number states to learn to real number of states')
         parser.add_argument('-el', '--extension_length', type=int, default=3,
                             help='Extension length to produce traces')
 
@@ -173,8 +203,8 @@ def main():
                             help="Print level for all algorithms. Usually ranges from 0 (nothing) to 3 (everything).")
         args = parser.parse_args()
 
-        min_num_states = args.min_num_states
-        max_num_states = args.max_num_states
+        diff_min_states = args.diff_min_states
+        diff_max_states = args.diff_max_states
         extension_length = args.extension_length
 
         learn_from_dir = args.learn_all_automata_from_dir
@@ -187,8 +217,8 @@ def main():
         reuse_existing_automata = args.reuse
 
     else:
-        min_num_states = int(input("Minimum number of states: "))
-        max_num_states = int(input("Maximum number of states: "))
+        diff_min_states = int(input("Difference of minimum number states to learn to real number of states: "))
+        diff_max_states = int(input("Difference of maximum number states to learn to real number of states: "))
         extension_length = int(input("Extension length: "))
 
         learn_from_dir = bool(input("Learn all automata from a directory? (y/n) (default: no): ") in ("y", "Y", "yes"))
@@ -213,8 +243,8 @@ def main():
 
     set_current_process_name(os.path.basename(__file__))
     learn_automata_from_files_and_calculate_metrics(files_to_learn,
-                                                    min_num_states=min_num_states,
-                                                    max_num_states=max_num_states,
+                                                    diff_min_states=diff_min_states,
+                                                    diff_max_states=diff_max_states,
                                                     extension_length=extension_length, )
 
 
