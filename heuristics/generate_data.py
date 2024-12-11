@@ -2,9 +2,12 @@ import argparse
 import ast
 import csv
 import itertools
+import json
 import os
+import shutil
 import sys
 import uuid
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -57,27 +60,76 @@ def _calculate_metrics(learned_model: MooreMachine, info: dict[str, Any], traces
     return metrics
 
 
-def learn_automaton_and_calculate_metrics(automaton: MooreMachine, *,
+def write_single_automaton_results(results_dir: str | Path, original_automaton_file: str | Path,
+                                   learned_model: MooreMachine | None, learning_info: dict[str, Any], result: dict[str, Any]):
+    results_dir = Path(results_dir)
+    original_automaton_file = Path(original_automaton_file)
+    assert original_automaton_file.is_file()
+    assert original_automaton_file.parent == results_dir
+
+    assert learning_info["num_states"] == result["num_states"]
+
+    # write learned model to dir
+    if learned_model is not None:
+        num_states = len(learned_model.states)
+        assert num_states == learning_info["num_states"]
+        learned_model.save(results_dir/f"LearnedModel_{num_states}States.dot")
+    else:
+        num_states = learning_info["num_states"]
+
+    # write learning info to dir
+    with open(results_dir/f"LearningInfo_{num_states}States.json", 'w') as f:
+        json.dump(learning_info, f, indent=4)
+
+    # write metric results to dir
+    with open(results_dir/f"LearningResults_{num_states}States.json", 'w') as f:
+        json.dump(result, f, indent=4)
+
+
+def learn_automaton_and_calculate_metrics(automaton_file: str, *,
                                           diff_min_states=3, diff_max_states=3, extension_length=3,
-                                          glitch_percentage=0) -> list[dict[str, float]]:
+                                          glitch_percentage=0,
+                                          results_dir="generated_data") -> list[dict[str, float]]:
+    # create directory for this automaton's result and copy automaton file there
+    results_dir = Path(results_dir) / Path(automaton_file).stem
+    os.makedirs(results_dir, exist_ok=False)
+    automaton_file = shutil.copyfile(automaton_file, results_dir/"RealModel.dot")
+
+    # load automaton, set up sul, create traces
+    automaton = load_automaton_from_file(automaton_file, "moore")
+    input_alphabet = automaton.get_input_alphabet()
+    output_alphabet = sorted(list(set(s.output for s in automaton.states)))
+    orig_num_states = len(automaton.states)
+
     inputs = list(itertools.product(automaton.get_input_alphabet(), repeat=extension_length))
     sul = MooreSUL(automaton)
     if glitch_percentage:
         sul = GlitchingSUL(sul, glitch_percentage=glitch_percentage)
     traces = [trace_query(sul, input_combination) for input_combination in inputs]
 
-    orig_num_states = len(automaton.states)
+    # write info (incl. traces) to file
+    info = dict()
+    info["original_automaton"] = str(automaton_file)
+    info["num_states"] = orig_num_states
+    info["glitch_percent"] = glitch_percentage
+    info["input_alphabet"] = input_alphabet
+    info["output_alphabet"] = output_alphabet
+    info["traces"] = traces
+    with open(results_dir/"info.json", 'w') as f:
+        json.dump(info, f, indent=4)
+
+    # set up loop
     min_states = orig_num_states - diff_min_states
     max_states = orig_num_states + diff_max_states
     logger.info(f"Calculating metrics for learning a MooreMachine with {len(automaton.states)} states, "
-                f"{len(automaton.get_input_alphabet())} inputs, {get_num_outputs(traces)} outputs. "
+                f"{len(input_alphabet)} inputs, {len(output_alphabet)} outputs. "
                 f"Learning with {min_states} states to {max_states} states, from {len(traces)} traces.")
 
+    # learn for each num_state, calculate results and write single results to file within automaton dir
     results = []
-    automaton_uid = uuid.uuid4().hex
     for num_states in range(min_states, max_states + 1):
         logger.info(f"Learning {num_states}-state automaton...")
-        learned_model, _, info = run_pmSATLearn(data=traces,
+        learned_model, _, learning_info = run_pmSATLearn(data=traces,
                                                 n_states=num_states,
                                                 automata_type="moore",
                                                 glitchless_data=[],
@@ -85,19 +137,22 @@ def learn_automaton_and_calculate_metrics(automaton: MooreMachine, *,
                                                 timeout=5*60,
                                                 cost_scheme="per_step",
                                                 print_info=False)
-        result = _calculate_metrics(learned_model, info, traces) if learned_model is not None else {}
+        result = _calculate_metrics(learned_model, learning_info, traces) if learned_model is not None else {}
         additional_knowledge = {
             "distance": num_states - len(automaton.states),
-            "automaton": automaton_uid,
-            "num_traces": len(traces)
+            "automaton": str(automaton_file),
+            "num_traces": len(traces),
+            "num_states": num_states
         }
-        results.append(additional_knowledge | result)
-        # for metric_name, metric_value in result.items():
-        #     if metric_name not in results:
-        #         results[metric_name] = []
-        #     results[metric_name].append(metric_value)
+        result = additional_knowledge | result
+        results.append(result)
+        write_single_automaton_results(results_dir, automaton_file, learned_model, learning_info, result)
+
+    # write the results of all runs to file in folder
+    write_metrics_to_csv(results, results_dir/"results.csv")
 
     return results
+
 
 def learn_automaton_and_calculate_metrics_mp(kwargs):
     set_current_process_name(f"LEARN_{uuid.uuid4().hex[:4]}")
@@ -123,12 +178,14 @@ def write_metrics_to_csv(metrics: list[dict[str, float]], csv_file):
     logger.info(f"Finished writing metrics to {csv_file}.")
 
 
-def learn_automata_and_calculate_metrics(automata: list[MooreMachine], multiprocessing=True, *args, **kwargs) -> list[dict[str, float]]:
+@timeit("learning automata and calculating metrics")
+def learn_automata_and_calculate_metrics(automata_files: list[str], multiprocessing=True, results_dir="generated_data", **kwargs) -> list[dict[str, float]]:
+    results_dir = new_file(results_dir)
     if multiprocessing:
         pool = pebble.ProcessPool(max_workers=4)
         def generator():
-            for a in automata:
-                yield {"automaton": a} | kwargs
+            for a in automata_files:
+                yield {"automaton_file": a, "results_dir": results_dir} | kwargs
 
         futures = pool.map(learn_automaton_and_calculate_metrics_mp, generator())
         metrics = []
@@ -136,18 +193,12 @@ def learn_automata_and_calculate_metrics(automata: list[MooreMachine], multiproc
             metrics.extend(future)
     else:
         metrics = []
-        for a in automata:
-            metrics.extend(learn_automaton_and_calculate_metrics(a, *args, **kwargs))
+        for a in automata_files:
+            metrics.extend(learn_automaton_and_calculate_metrics(a, results_dir=results_dir, **kwargs))
 
-    csv_file = new_file("training_data.csv")
+    csv_file = os.path.join(results_dir, "complete_data.csv")
     write_metrics_to_csv(metrics, csv_file)
     return metrics
-
-
-@timeit("learning automata and calculating metrics")
-def learn_automata_from_files_and_calculate_metrics(automata_files: list[str], *args, **kwargs):
-    return learn_automata_and_calculate_metrics([load_automaton_from_file(automaton_file, 'moore') for automaton_file in automata_files],
-                                                *args, **kwargs)
 
 
 def main():
@@ -173,6 +224,8 @@ def main():
                             help="Whether to reuse existing automata or to force generation of new ones")
         parser.add_argument('-mp', '--multiprocessing', type=bool, default=True,
                             help="Whether to use multiprocessing or not")
+        parser.add_argument('-rd', '--results_dir', type=str, default="generated_data",
+                            help="Directory to store results in")
         args = parser.parse_args()
 
         diff_min_states = args.diff_min_states
@@ -189,6 +242,7 @@ def main():
         generated_automata_dir = args.generated_automata_dir
         reuse_existing_automata = args.reuse
         use_multiprocessing = args.multiprocessing
+        results_dir = args.results_dir
 
     else:
         diff_min_states = int(input("Difference of minimum number states to learn to real number of states: "))
@@ -207,6 +261,7 @@ def main():
             generated_automata_dir = input("Enter directory to store generated automata in: ") or "generated_automata"
             reuse_existing_automata = input("Reuse existing automata? (y/n) (default: yes): ") in ("y", "Y", "yes", "")
         use_multiprocessing = input("Use multiprocessing? (y/n) (default: yes): ") in ("y", "Y", "yes", "")
+        results_dir = input("Enter directory to store results in: ") or "generated_data"
 
     if learn_from_dir:
         logger.warning("Learning from directory has not been tested; confirm manually!")
@@ -215,14 +270,14 @@ def main():
         files_to_learn = get_generated_automata_files_to_learn(num_automata_per_combination, automata_type,
                                                                num_states, num_inputs, num_outputs,
                                                                generated_automata_dir, reuse_existing_automata)
-
     set_current_process_name(os.path.basename(__file__))
-    learn_automata_from_files_and_calculate_metrics(files_to_learn,
-                                                    multiprocessing=use_multiprocessing,
-                                                    diff_min_states=diff_min_states,
-                                                    diff_max_states=diff_max_states,
-                                                    extension_length=extension_length,
-                                                    glitch_percentage=glitch_percent)
+    learn_automata_and_calculate_metrics(files_to_learn,
+                                         multiprocessing=use_multiprocessing,
+                                         diff_min_states=diff_min_states,
+                                         diff_max_states=diff_max_states,
+                                         extension_length=extension_length,
+                                         glitch_percentage=glitch_percent,
+                                         results_dir=results_dir,)
 
 
 
