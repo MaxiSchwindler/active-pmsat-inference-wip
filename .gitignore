@@ -78,3 +78,5 @@ venv2/
 **/learning_results*/
 **/many_results*/
 **/some_results*/
+/generated_data/
+/generated_data_1/
