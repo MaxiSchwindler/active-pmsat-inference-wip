@@ -9,11 +9,14 @@ from aalpy.automata import MooreMachine, MealyMachine
 
 from active_pmsatlearn.log import get_logger
 from pmsatlearn.learnalgo import Input, Output
-from typing import Literal, Any, TypeAlias, Sequence
+from typing import Literal, Any, TypeAlias, Sequence, Callable
 
 Trace: TypeAlias = tuple[Output | tuple[Input, Output]]
 SupportedAutomaton: TypeAlias = MooreMachine | MealyMachine
 SupportedSUL: TypeAlias = MooreSUL | MealySUL
+PossibleHypothesis: TypeAlias = SupportedAutomaton | None
+PmSatLearningInfo: TypeAlias = dict[str, Any]
+HeuristicFunction: TypeAlias = Callable[[SupportedAutomaton, PmSatLearningInfo, list[Trace]], float]
 
 
 def get_outputs(traces: Sequence[Trace]) -> set[Output]:
