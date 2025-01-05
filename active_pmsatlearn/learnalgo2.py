@@ -4,8 +4,7 @@ import time
 import math
 import statistics
 from collections import defaultdict
-from inspect import trace
-from pprint import pprint
+from dataclasses import dataclass
 import random
 
 import numpy as np
@@ -16,13 +15,52 @@ from active_pmsatlearn.utils import *
 from active_pmsatlearn.log import get_logger, DEBUG_EXT
 logger = get_logger("APMSL_noMAT")
 
-DECREASE = -1
-INCREASE = 1
+class Action:
+    pass
+
+
+@dataclass
+class Terminate(Action):
+    hyp: PossibleHypothesis
+    hyp_stoc: PossibleHypothesis
+    pmsat_info: PmSatLearningInfo
+
+
+@dataclass
+class Continue(Action):
+    next_min_num_states: int = None
+
+
+class TerminationMode:
+    pass
+
+
+class RequirementsTermination(TerminationMode):
+    pass
+
+
+class GlitchThresholdTermination(RequirementsTermination):
+    threshold: float = 1.0
+
+
+class ImprovementTermination(TerminationMode):
+    pass
+
+
+class ScoreImprovementTermination(ImprovementTermination):
+    pass
+
+
+class GlitchImprovementTermination(ImprovementTermination):
+    pass
 
 
 def simple_heuristic(learned_model: SupportedAutomaton, learning_info: PmSatLearningInfo, traces: list[Trace]):
     logger.debug_ext(f"Calculating simple heuristic...")
     score = 0
+
+    if learned_model is None:
+        return -100
 
     glitched_delta_freq = learning_info["glitched_delta_freq"]
     if len(glitched_delta_freq) > 0:
@@ -33,12 +71,17 @@ def simple_heuristic(learned_model: SupportedAutomaton, learning_info: PmSatLear
         logger.debug_ext(f"No glitched delta frequencies; {score=}")
 
     dominant_delta_freq = learning_info["dominant_delta_freq"]
-    dominant_delta_freq = [freq for freq in dominant_delta_freq if freq > 0]  # note: 0-freqs are dominant transitions without evidence
+    dominant_delta_freq = [freq for freq in dominant_delta_freq if freq > 0]  # note: 0-freqs are dominant transitions without evidence -> can't be input complete without these
 
     score -= 1 / np.min(dominant_delta_freq)
     logger.debug_ext(f"Subtracting inverse of minimum of dominant delta frequencies ({np.min(dominant_delta_freq)}) from {score=}")
 
-    return score
+    return float(score)  # cast numpy away (nicer output)
+
+
+def intermediary_heuristic(*args, **kwargs):
+    # basically the simple heuristic plus a reward for lower numbers of glitches
+    return advanced_heuristic(*args, **kwargs, punish_input_incompleteness=False, punish_unreachable_states=False)
 
 
 def advanced_heuristic(learned_model: SupportedAutomaton, learning_info: PmSatLearningInfo, traces: list[Trace],
@@ -46,39 +89,47 @@ def advanced_heuristic(learned_model: SupportedAutomaton, learning_info: PmSatLe
                        punish_low_dominant_freq=True, punish_input_incompleteness=True):
     score = 0
 
+    if learned_model is None:
+        return -100
+
     glitched_delta_freq = learning_info["glitched_delta_freq"]
     dominant_delta_freq = learning_info["dominant_delta_freq"]
 
     # reward lower mean of glitched frequencies
+    # ADDS between 0 and 1
     if reward_lower_glitch_mean:
         if len(glitched_delta_freq) > 0:
             score += 1 / np.mean(glitched_delta_freq)
-        else:
-            score += 1  # this rewards "no glitches" a lot
 
     # reward lower numbers of glitches
+    # ADDS between 0 and 1
     if reward_lower_num_glitches:
         num_glitches = len(learning_info["glitch_steps"])
         if num_glitches > 0:
             score += 1 / num_glitches
+        else:
+            score += 1
+
+    # penalize low dominant frequencies
+    # SUBTRACTS between 0 and 1
+    if punish_low_dominant_freq:
+        dominant_delta_freq_without_zero = [freq for freq in dominant_delta_freq if freq > 0]
+        score -= 1 / np.min(dominant_delta_freq_without_zero)
 
     # penalize unreachable states (in absolute numbers!) a LOT
+    # SUBTRACTS between 0 and inf
     if punish_unreachable_states:
         learned_model.compute_prefixes()
         num_unreachable = sum(1 for state in learned_model.states if state.prefix is None)
         score -= num_unreachable
 
-    # penalize low dominant frequencies
-    if punish_low_dominant_freq:
-        dominant_delta_freq_without_zero = [freq for freq in dominant_delta_freq if freq > 0]
-        score -= 1 / np.min(dominant_delta_freq_without_zero)
-
     # punish dominant frequencies that are 0 (-> not input complete)
+    # SUBTRACTS between 0 and inf
     if punish_input_incompleteness:
         num_dominant_zero_freq = sum(1 for freq in dominant_delta_freq if freq == 0)
         score -= num_dominant_zero_freq
 
-    return score
+    return float(score)  # cast numpy away (nicer output)
 
 
 def run_activePmSATLearn(
@@ -126,21 +177,29 @@ def run_activePmSATLearn(
     assert sliding_window_size % 2 == 1, "Sliding window size must be odd (for now)"
     # additional input verification happens in run_pmSATLearn
 
-    if heuristic_function == "simple":
-        heuristic_function = simple_heuristic
-    elif heuristic_function == "advanced":
-        heuristic_function = advanced_heuristic
-    else:
-        assert callable(heuristic_function), "heuristic_function must be either 'simple'/'advanced' or a callable"
+    match heuristic_function:
+        case "simple":
+            heuristic_function = simple_heuristic
+        case "intermediary":
+            heuristic_function = intermediary_heuristic
+        case "advanced":
+            heuristic_function = advanced_heuristic
+        case _:
+            assert callable(heuristic_function), "heuristic_function must be either 'simple'/'advanced' or a callable"
 
     logger.setLevel({0: logging.CRITICAL, 1: logging.INFO, 2: logging.DEBUG, 2.5: DEBUG_EXT, 3: DEBUG_EXT}[print_level])
+    logger.debug("Running the non-MAT learn algorithm...")
+    detailed_learning_info = defaultdict(dict)
 
     start_time = time.time()
     must_end_by = start_time + timeout if timeout is not None else 100 * 365 * 24 * 60 * 60  # no timeout -> must end in 100 years :)
     learning_rounds = 0
-    final_hyps_and_info = None, None, None
-    detailed_learning_info = defaultdict(dict)
+
     all_input_combinations = list(itertools.product(alphabet, repeat=extension_length))
+
+    final_hyps_and_info = None, None, None
+    previous_hypotheses = None
+    previous_scores = None
 
     def do_input_completeness_processing(current_hyp):
         return _do_input_completeness_processing(hyp=current_hyp, sul=sul, alphabet=alphabet,
@@ -154,7 +213,6 @@ def run_activePmSATLearn(
     def do_state_exploration(hyp: SupportedAutomaton):
         return _do_state_exploration(hyp=hyp, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations)
 
-    logger.debug("Running the non-MAT learn algorithm...")
     logger.debug("Creating initial traces...")
     traces = [trace_query(sul, input_combination) for input_combination in all_input_combinations]
     logger.debug_ext(f"Initial traces: {traces}")
@@ -163,8 +221,7 @@ def run_activePmSATLearn(
     min_num_states = get_num_outputs(traces)
 
     while not (timed_out := (time.time() >= must_end_by)):
-        learning_rounds += 1
-        logger.info(f"Starting learning round {learning_rounds}")
+        logger.info(f"Starting learning round {(learning_rounds := learning_rounds + 1)}")
         detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
         detailed_learning_info[learning_rounds]["sliding_window_start"] = min_num_states
 
@@ -180,69 +237,65 @@ def run_activePmSATLearn(
                                           pm_strategy=pm_strategy,
                                           cost_scheme=cost_scheme,
                                           print_info=print_level == 3)
-        assert len(hypotheses) == sliding_window_size
+        # assert len(hypotheses) == sliding_window_size  # might not hold with timeouts
+
+        if (num_timed_out := sum(1 if info["timed_out"] else 0 for h, h_s, info in hypotheses.values())) == len(hypotheses):
+            timed_out = True
+            break
+        elif num_timed_out > 0:
+            assert num_timed_out == 1, "There should only be one timed out hypothesis (the last one)"
+            assert hypotheses[-1][-1]["timed_out"]
+            hypotheses.pop(-1)  # remove timed-out hypothesis
+
+        #####################################
+        #           PREPROCESSING           #
+        #####################################
 
         if input_completeness_processing:
-            ### Might look roughly like this:
-            # traces_learnt_from = copy.deepcopy(traces)
-            # for hyp, _, _ in hypotheses.values():
-            #     preprocessing_additional_traces = do_input_completeness_processing(current_hyp=hyp, traces_learnt_from=traces_learnt_from, current_traces=traces)
-            #     traces += preprocessing_additional_traces
-            # continue
-            raise NotImplementedError("Input completeness preprocessing is not implemented yet.")
+            # TODO: could this lead to an infinite loop?
+            preprocessing_additional_traces = []
+            for hyp, _, _ in hypotheses.values():
+                additional_traces = do_input_completeness_processing(current_hyp=hyp)
+                preprocessing_additional_traces.extend(additional_traces)
+
+            remove_duplicate_traces(traces, preprocessing_additional_traces)  # TODO: does de-duplication affect anything? check!
+            logger.debug(f"Produced {len(preprocessing_additional_traces)} additional traces from input completeness processing")
+            logger.debug_ext(f"Additional traces from input completeness processing: {preprocessing_additional_traces}")
+            detailed_learning_info[learning_rounds]["preprocessing_additional_traces"] = len(preprocessing_additional_traces)
+
+            if preprocessing_additional_traces:
+                traces += preprocessing_additional_traces
+                continue
+
+        #####################################
+        #              SCORING              #
+        #####################################
 
         scores = {num_states: heuristic_function(hyp, info, traces) for num_states, (hyp, _, info) in hypotheses.items()}
         assert sorted(scores.keys()) == list(scores.keys())
         logger.debug(f"Calculated the following scores: {scores}")
+        detailed_learning_info[learning_rounds]["heuristic_scores"] = scores
 
-        peak_index = find_index_of_peak(scores)
-        peak_num_states = list(scores.keys())[peak_index] if peak_index is not None else None
-        detailed_learning_info[learning_rounds]["peak_index"] = peak_index
-        detailed_learning_info[learning_rounds]["peak_num_states"] = peak_num_states
+        #####################################
+        #            EVALUATING             #
+        #####################################
 
-        if peak_index is None:
-            # we don't have a peak -> we don't know which direction to move in
-            # probably: generate more traces, learn same window again, at some point (after 2 such rounds?), simply return highest score?
-            # also possible: move in direction of absolute highest value (even if it is not a clear peak)?
-            logger.debug("Did not find a clear peak")
-            raise NotImplementedError
-        else:
-            logger.debug(f"Found peak at index {peak_index} of sliding window <{min(scores.keys())}-{max(scores.keys())}>; "
-                         f"i.e. at {peak_num_states} states")
+        action = decide_next_action(hypotheses, scores,
+                                    previous_hypotheses, previous_scores,
+                                    current_min_num_states=min_num_states,
+                                    traces_used_to_learn=traces,
+                                    termination_mode=GlitchImprovementTermination(),
+                                    current_learning_info=detailed_learning_info[learning_rounds])
 
-            mid_index = sliding_window_size // 2
-            if peak_index == mid_index or (peak_index < mid_index and min_num_states == get_num_outputs(traces)):
-                if peak_index == mid_index:
-                    logger.debug(f"Peak is exactly in the middle; Window is positioned correctly")
-                else:
-                    logger.debug(f"Peak is in left side of sliding window, but cannot move window further left; Window is positioned correctly")
-                peak_hyp, peak_hyp_stoc, peak_pmsat_info = hypotheses[peak_num_states]
-
-                passes_sanity_checks, reason = sanity_checks(peak_hyp)
-                if not passes_sanity_checks:
-                    logger.debug(f"Peak hypothesis did not pass sanity checks: {reason}. Continuing.")
-                else:
-                    logger.debug(f"Peak hypothesis passed sanity checks; checking requirements")
-
-                    complete_num_steps = sum(len(trace) for trace in traces)
-                    percent_glitches = len(peak_pmsat_info["glitch_steps"]) / complete_num_steps * 100
-                    if percent_glitches < 1.0:
-                        logger.debug("Peak hypothesis passed requirements, returning")
-                        # TODO: maybe run again with same window, compare scores with last round? return if no improvement?
-                        final_hyps_and_info = peak_hyp, peak_hyp_stoc, peak_pmsat_info
-                        break
-                    else:
-                        logger.debug(f"Peak hypothesis failed requirements, continuing")
-
-            else:
-                diff_to_mid_index = peak_index - mid_index
-                min_num_states = min_num_states + diff_to_mid_index
-                if min_num_states >= (num_outputs := get_num_outputs(traces)):
-                    logger.debug(f"Moving start of sliding window to {min_num_states} states to position peak at the midpoint.")
-                else:
-                    logger.debug(f"Should move start of sliding window to {min_num_states} states to position peak at the midpoint, "
-                                 f"but there are too many outputs in the traces ({num_outputs}); setting min_num_states to {num_outputs}")
-                    min_num_states = num_outputs
+        match action:
+            case Terminate(hyp, hyp_stoc, pmsat_info):
+                final_hyps_and_info = hyp, hyp_stoc, pmsat_info
+                break
+            case Continue(next_min_num_states):
+                if next_min_num_states is not None:
+                    min_num_states = next_min_num_states
+            case _:
+                raise ValueError(f"Unexpected action {action}")
 
         #####################################
         #          POST-PROCESSING          #
@@ -295,8 +348,15 @@ def run_activePmSATLearn(
             # detailed_learning_info[learning_rounds]["removed_traces"] = len(traces_to_remove)
             # traces = [t for t_i, t in enumerate(traces) if t_i not in traces_to_remove]
 
+        previous_hypotheses = hypotheses
+        previous_scores = scores
+
     if timed_out:
         logger.warning(f"Aborted learning after reaching timeout (start: {start_time:.2f}, now: {time.time():.2f}, timeout: {timeout})")
+        if previous_scores:
+            previous_peak = find_index_of_absolute_peak(previous_scores)
+            previous_peak_num_states = get_num_states_from_scores_index(previous_scores, previous_peak)
+            final_hyps_and_info = previous_hypotheses[previous_peak_num_states]
 
     hyp, hyp_stoc, pmsat_info = final_hyps_and_info
     if return_data:
@@ -313,7 +373,7 @@ def run_activePmSATLearn(
 
 
 def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: list[Trace], must_end_by: float = 0.0,
-                         **common_pmsatlearn_kwargs) -> dict[int, tuple[PossibleHypothesis, PossibleHypothesis, dict]]:
+                         **common_pmsatlearn_kwargs) -> HypothesesWindow:
     logger.debug(f"Running pmSATLearn to learn {sliding_window_size} hypotheses with between {min_num_states} and "
                  f"{min_num_states + sliding_window_size} states from {len(traces)} traces")
     learned = {}
@@ -321,25 +381,36 @@ def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: 
         num_states = min_num_states + i
         assert num_states >= get_num_outputs(traces)
         logger.debug(f"Learning {num_states}-state hypothesis...")
-        learned[num_states] = run_pmSATLearn(data=traces,
-                                             n_states=num_states,
-                                             timeout=max(must_end_by - time.time(), 0),
-                                             **common_pmsatlearn_kwargs)
+        hyp, h_stoc, pmsat_info = run_pmSATLearn(data=traces,
+                                                 n_states=num_states,
+                                                 timeout=max(must_end_by - time.time(), 0),
+                                                 **common_pmsatlearn_kwargs)
+        if pmsat_info["timed_out"]:
+            break  # the first time learning times out, we end learning the sliding window (everything afterwards will also time out)
+        else:
+            pmsat_info["percent_glitches"] = get_glitch_percentage(pmsat_info, traces)
+        learned[num_states] = hyp, h_stoc, pmsat_info
     return learned
 
+def find_index_of_unimodal_peak(scores: dict[int, float]) -> int | None:
+    if scores is None:
+        return None
+    vals = list(scores.values())
+    peak_index = vals.index(max(vals))
+    if all(vals[i] <= vals[i + 1] for i in range(0, peak_index)) and all(vals[j] >= vals[j+1] for j in range(peak_index, len(vals) - 1)):
+        return peak_index
 
-def find_index_of_peak(scores: dict[int, float]) -> int | None:
-    # TODO: what about e.g. w-shaped peaks? - maybe we can ignore them, as we only want clear peaks
-    score_values = list(scores.values())
+def find_index_of_absolute_peak(scores: dict[int, float]) -> int:
+    if scores is None:
+        return None
+    vals = list(scores.values())
+    return vals.index(max(vals))
 
-    for i in range(0, len(score_values)):
-        left = score_values[:i]
-        right = score_values[i + 1:]
-        if all(score_values[i] >= val for val in left) and all(score_values[i] >= val for val in right):
-            # return num_states[i]  # returns the number of states at which the peak is
-            return i  # returns the index of the peak in our sliding window
+def get_num_states_from_scores_index(scores: dict[int, float], index: int | None) -> int | None:
+    if index is None:
+        return None
+    return list(scores.keys())[index]
 
-    return None
 
 
 def sanity_checks(hyp: SupportedAutomaton) -> tuple[bool, str]:
@@ -360,6 +431,115 @@ def sanity_checks(hyp: SupportedAutomaton) -> tuple[bool, str]:
     return True, "Passes all checks"
 
 
+def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dict[int, float],
+                       previous_hypotheses: HypothesesWindow | None, previous_scores: dict[int, float] | None,
+                       current_min_num_states: int, traces_used_to_learn: list[Trace],
+                       termination_mode: TerminationMode,
+                       current_learning_info: dict[str, Any]) -> Action:
+    peak_index = current_learning_info["peak_index"] = find_index_of_unimodal_peak(current_scores)
+    peak_num_states = current_learning_info["peak_num_states"] = get_num_states_from_scores_index(current_scores, peak_index)
+
+    prev_peak_index = find_index_of_unimodal_peak(previous_scores)
+    prev_peak_num_states = get_num_states_from_scores_index(previous_scores, prev_peak_index)
+
+    unimodal_peak = bool(peak_index is not None)
+    sliding_window_size = len(current_scores)
+    min_allowed_num_states = get_num_outputs(traces_used_to_learn)
+
+    if not unimodal_peak:
+        match previous_hypotheses, prev_peak_index:
+            case None, None:
+                logger.debug("No unimodal peak found in initial round; continuing with same window after collecting more traces.")
+                return Continue()
+            case _, None:
+                logger.debug("No unimodal peak found in current and previous round; using absolute peak.")
+                peak_index = current_learning_info["absolute_peak_index"] = find_index_of_absolute_peak(current_scores)
+                peak_num_states = current_learning_info["absolute_peak_num_states"] = get_num_states_from_scores_index(current_scores, peak_index)
+            case _, _:
+                logger.debug("No unimodal peak found in current round; continuing with same window after collecting more traces")
+                return Continue()
+            case _:
+                raise ValueError(f"Unhandled case: {previous_hypotheses=}, {prev_peak_index=}")
+
+    logger.debug(f"Found peak at index {peak_index} of sliding window <{min(current_scores.keys())}-{max(current_scores.keys())}>; "
+                 f"i.e. at {peak_num_states} states")
+    if previous_hypotheses is not None:
+        logger.debug(f"Previous peak was at index {prev_peak_index} of sliding window <{min(previous_scores.keys())}-{max(previous_scores.keys())}>; "
+                     f"i.e. at {prev_peak_num_states} states")
+
+    if unimodal_peak:
+        currently_positioned_correctly = is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states)
+    else:
+        # if we don't have an unimodal peak, we don't move the window -> assume that we are positioned correctly
+        currently_positioned_correctly = True
+
+    if not currently_positioned_correctly:
+        mid_index = sliding_window_size // 2
+        diff_to_mid_index = peak_index - mid_index
+        min_num_states = current_min_num_states + diff_to_mid_index
+        if min_num_states >= min_allowed_num_states:
+            logger.debug(f"Moving start of sliding window to {min_num_states} states to position peak at the midpoint.")
+        else:
+            logger.debug(
+                f"Should move start of sliding window to {min_num_states} states to position peak at the midpoint, "
+                f"but there are too many outputs in the traces ({num_outputs}); setting min_num_states to {num_outputs}")
+            min_num_states = min_allowed_num_states
+
+        return Continue(next_min_num_states=min_num_states)
+
+    if prev_peak_num_states != peak_num_states:
+        logger.debug(f"Continue learning with the same window, since the last peak was at a different number of states ({prev_peak_num_states})")
+        return Continue()
+
+    peak_hyp, peak_hyp_stoc, peak_pmsat_info = current_hypotheses[peak_num_states]
+    prev_peak_hyp, prev_peak_hyp_stoc, prev_peak_pmsat_info = previous_hypotheses[prev_peak_num_states]
+
+    passes_sanity_checks, reason = sanity_checks(peak_hyp)  # TODO not entirely sure about the sanity checks
+    if not passes_sanity_checks:
+        logger.debug(f"Peak hypothesis did not pass sanity checks: {reason}. Continuing.")
+        return Continue()
+    logger.debug(f"Peak hypothesis passed sanity checks; checking requirements")
+
+    match termination_mode:
+        case GlitchThresholdTermination(threshold):
+            percent_glitches = peak_pmsat_info["percent_glitches"]
+            msg = (f"Peak hypothesis has {{}} glitches ({percent_glitches}%) than the threshold allowed "
+                   f"by the termination mode ({threshold}%). ")
+            if percent_glitches <= threshold:
+                logger.debug(msg.format("less") + "Terminating.")
+                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+            else:
+                logger.debug(msg.format("more"))
+                return Continue()
+
+        case GlitchImprovementTermination():
+            curr_percent_glitches = peak_pmsat_info["percent_glitches"]
+            prev_percent_glitches = prev_peak_pmsat_info["percent_glitches"]
+            msg = f"Peak hypothesis has {curr_percent_glitches}% glitches, while previous peak hypothesis had {prev_percent_glitches}% glitches. "
+            if curr_percent_glitches <= prev_percent_glitches:
+                logger.debug(msg + "Terminating.")
+                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+            else:
+                logger.debug(msg + "Continuing with additional traces.")
+                return Continue()
+
+        case _:
+            raise NotImplementedError(f"Termination mode {type(termination_mode).__name__} not implemented!")
+
+
+def get_glitch_percentage(pmsat_info, traces_used_to_learn):
+    complete_num_steps = sum(len(trace) for trace in traces_used_to_learn)
+    percent_glitches = len(pmsat_info["glitch_steps"]) / complete_num_steps * 100
+    return percent_glitches
+
+
+def is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states):
+    mid_index = sliding_window_size // 2
+    if peak_index == mid_index or (peak_index < mid_index and current_min_num_states == min_allowed_num_states):
+        logger.debug(f"Window is positioned correctly. Peak is "
+                     f"{'exactly in the middle' if peak_index == mid_index else 'on the left side but cannot move further left'}.")
+        return True
+    return False
 
 def get_incongruent_traces(glitchless_trace, traces) -> set[int]:
     glitchlass_trace_inputs = [step[0] for step in glitchless_trace[1:]]
@@ -435,6 +615,9 @@ def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL
                 for suffix in all_input_combinations:
                     trace = trace_query(sul, list(state.prefix) + [inp] + list(suffix))
                     new_traces.append(trace)
+
+    if hyp.is_input_complete():
+        assert not new_traces, "Should not create new traces if already input complete!"
 
     return new_traces
 

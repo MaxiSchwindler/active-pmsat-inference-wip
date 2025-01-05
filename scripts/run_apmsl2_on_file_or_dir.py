@@ -54,14 +54,15 @@ def main():
             alphabet=oracle.alphabet,
             sul=sul,
             automaton_type="moore",
-            extension_length=2,
-            heuristic_function='advanced',
+            extension_length=3,
+            heuristic_function='intermediary',
             pm_strategy="rc2",
             timeout=100,
-            print_level=2.5,
+            print_level=2,
             return_data=True,
             input_completeness_processing=False,
-            glitch_processing=True,
+            glitch_processing=False,
+            random_state_exploration=True,
             discard_glitched_traces=False
         )
 
@@ -79,7 +80,7 @@ def main():
                 learned = learned_model.execute_sequence(learned_model.initial_state, b)
                 print(f"Bisimilar: False. Counterexample: {b}. Output original: {orig}. Output learned: {learned}")
             else:
-                print(f"Bisimilar: {b}")
+                print(f"Bisimilar: {b is None}")
 
             learned_model.save("LearnedModel")
             sul.automaton.save("OriginalModel")
