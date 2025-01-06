@@ -4,20 +4,9 @@ from functools import wraps
 from contextlib import contextmanager
 
 from aalpy.base import SUL
-from aalpy.SULs import MooreSUL, MealySUL
-from aalpy.automata import MooreMachine, MealyMachine
 
-from active_pmsatlearn.log import get_logger
-from pmsatlearn.learnalgo import Input, Output
-from typing import Literal, Any, TypeAlias, Sequence, Callable
-
-Trace: TypeAlias = tuple[Output | tuple[Input, Output]]
-SupportedAutomaton: TypeAlias = MooreMachine | MealyMachine
-SupportedSUL: TypeAlias = MooreSUL | MealySUL
-PossibleHypothesis: TypeAlias = SupportedAutomaton | None
-PmSatLearningInfo: TypeAlias = dict[str, Any]
-HypothesesWindow: TypeAlias = dict[int, tuple[PossibleHypothesis, PossibleHypothesis, PmSatLearningInfo]]
-HeuristicFunction: TypeAlias = Callable[[SupportedAutomaton, PmSatLearningInfo, list[Trace]], float]
+from active_pmsatlearn.defs import Input, Output, Trace
+from typing import Sequence
 
 
 def get_outputs(traces: Sequence[Trace]) -> set[Output]:

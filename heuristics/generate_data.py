@@ -17,7 +17,8 @@ from aalpy.SULs import MooreSUL
 from pebble import concurrent
 
 from active_pmsatlearn.log import get_logger, set_current_process_name
-from active_pmsatlearn.utils import trace_query, get_num_outputs, Trace, timeit
+from active_pmsatlearn.utils import trace_query, get_num_outputs, timeit
+from active_pmsatlearn.defs import Trace
 from evaluation.generate_automata import add_automata_generation_arguments
 from evaluation.learn_automata import get_all_automata_files_from_dir, get_generated_automata_files_to_learn
 from evaluation.utils import parse_range, new_file, GlitchingSUL

@@ -1,19 +1,18 @@
 import itertools
 import logging
-import time
-import math
-import statistics
 from collections import defaultdict
 from dataclasses import dataclass
 import random
+from typing import Literal
 
-import numpy as np
-
+from active_pmsatlearn.heuristics import simple_heuristic, intermediary_heuristic, advanced_heuristic
 from pmsatlearn import run_pmSATLearn
-
+from active_pmsatlearn.common import do_cex_processing, do_glitch_processing, do_input_completeness_processing
+from active_pmsatlearn.defs import *
 from active_pmsatlearn.utils import *
 from active_pmsatlearn.log import get_logger, DEBUG_EXT
-logger = get_logger("APMSL_noMAT")
+logger = get_logger("APMSL")
+
 
 class Action:
     pass
@@ -39,6 +38,7 @@ class RequirementsTermination(TerminationMode):
     pass
 
 
+@dataclass
 class GlitchThresholdTermination(RequirementsTermination):
     threshold: float = 1.0
 
@@ -53,83 +53,6 @@ class ScoreImprovementTermination(ImprovementTermination):
 
 class GlitchImprovementTermination(ImprovementTermination):
     pass
-
-
-def simple_heuristic(learned_model: SupportedAutomaton, learning_info: PmSatLearningInfo, traces: list[Trace]):
-    logger.debug_ext(f"Calculating simple heuristic...")
-    score = 0
-
-    if learned_model is None:
-        return -100
-
-    glitched_delta_freq = learning_info["glitched_delta_freq"]
-    if len(glitched_delta_freq) > 0:
-        score += 1 / np.mean(glitched_delta_freq)
-        logger.debug_ext(f"Adding inverse of mean of glitched delta frequencies ({np.mean(glitched_delta_freq)}) to {score=}")
-    else:
-        score += 1
-        logger.debug_ext(f"No glitched delta frequencies; {score=}")
-
-    dominant_delta_freq = learning_info["dominant_delta_freq"]
-    dominant_delta_freq = [freq for freq in dominant_delta_freq if freq > 0]  # note: 0-freqs are dominant transitions without evidence -> can't be input complete without these
-
-    score -= 1 / np.min(dominant_delta_freq)
-    logger.debug_ext(f"Subtracting inverse of minimum of dominant delta frequencies ({np.min(dominant_delta_freq)}) from {score=}")
-
-    return float(score)  # cast numpy away (nicer output)
-
-
-def intermediary_heuristic(*args, **kwargs):
-    # basically the simple heuristic plus a reward for lower numbers of glitches
-    return advanced_heuristic(*args, **kwargs, punish_input_incompleteness=False, punish_unreachable_states=False)
-
-
-def advanced_heuristic(learned_model: SupportedAutomaton, learning_info: PmSatLearningInfo, traces: list[Trace],
-                       *, reward_lower_glitch_mean=True, reward_lower_num_glitches=True, punish_unreachable_states=True,
-                       punish_low_dominant_freq=True, punish_input_incompleteness=True):
-    score = 0
-
-    if learned_model is None:
-        return -100
-
-    glitched_delta_freq = learning_info["glitched_delta_freq"]
-    dominant_delta_freq = learning_info["dominant_delta_freq"]
-
-    # reward lower mean of glitched frequencies
-    # ADDS between 0 and 1
-    if reward_lower_glitch_mean:
-        if len(glitched_delta_freq) > 0:
-            score += 1 / np.mean(glitched_delta_freq)
-
-    # reward lower numbers of glitches
-    # ADDS between 0 and 1
-    if reward_lower_num_glitches:
-        num_glitches = len(learning_info["glitch_steps"])
-        if num_glitches > 0:
-            score += 1 / num_glitches
-        else:
-            score += 1
-
-    # penalize low dominant frequencies
-    # SUBTRACTS between 0 and 1
-    if punish_low_dominant_freq:
-        dominant_delta_freq_without_zero = [freq for freq in dominant_delta_freq if freq > 0]
-        score -= 1 / np.min(dominant_delta_freq_without_zero)
-
-    # penalize unreachable states (in absolute numbers!) a LOT
-    # SUBTRACTS between 0 and inf
-    if punish_unreachable_states:
-        learned_model.compute_prefixes()
-        num_unreachable = sum(1 for state in learned_model.states if state.prefix is None)
-        score -= num_unreachable
-
-    # punish dominant frequencies that are 0 (-> not input complete)
-    # SUBTRACTS between 0 and inf
-    if punish_input_incompleteness:
-        num_dominant_zero_freq = sum(1 for freq in dominant_delta_freq if freq == 0)
-        score -= num_dominant_zero_freq
-
-    return float(score)  # cast numpy away (nicer output)
 
 
 def run_activePmSATLearn(
@@ -202,17 +125,17 @@ def run_activePmSATLearn(
     previous_hypotheses = None
     previous_scores = None
 
-    def do_input_completeness_processing(current_hyp):
-        return _do_input_completeness_processing(hyp=current_hyp, sul=sul, alphabet=alphabet,
-                                                 all_input_combinations=all_input_combinations)
+    def _do_input_completeness_processing(current_hyp):
+        return do_input_completeness_processing(hyp=current_hyp, sul=sul, alphabet=alphabet,
+                                                all_input_combinations=all_input_combinations)
 
-    def do_glitch_processing(current_hyp: SupportedAutomaton, current_pmsat_info: dict[str, Any],
+    def _do_glitch_processing(current_hyp: SupportedAutomaton, current_pmsat_info: dict[str, Any],
                              current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
-        return _do_glitch_processing(sul=sul, hyp=current_hyp, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
-                                     traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations)
+        return do_glitch_processing(sul=sul, hyp=current_hyp, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
+                                    traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations)
 
-    def do_state_exploration(hyp: SupportedAutomaton):
-        return _do_state_exploration(hyp=hyp, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations)
+    def _do_state_exploration(hyp: SupportedAutomaton):
+        return do_state_exploration(hyp=hyp, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations)
 
     logger.debug("Creating initial traces...")
     traces = [trace_query(sul, input_combination) for input_combination in all_input_combinations]
@@ -256,7 +179,7 @@ def run_activePmSATLearn(
             # TODO: could this lead to an infinite loop?
             preprocessing_additional_traces = []
             for hyp, _, _ in hypotheses.values():
-                additional_traces = do_input_completeness_processing(current_hyp=hyp)
+                additional_traces = _do_input_completeness_processing(current_hyp=hyp)
                 preprocessing_additional_traces.extend(additional_traces)
 
             remove_duplicate_traces(traces, preprocessing_additional_traces)  # TODO: does de-duplication affect anything? check!
@@ -274,7 +197,7 @@ def run_activePmSATLearn(
 
         scores = {num_states: heuristic_function(hyp, info, traces) for num_states, (hyp, _, info) in hypotheses.items()}
         assert sorted(scores.keys()) == list(scores.keys())
-        logger.debug(f"Calculated the following scores: {scores}")
+        logger.debug(f"Calculated the following scores via heuristic function '{heuristic_function.__name__}': {scores}")
         detailed_learning_info[learning_rounds]["heuristic_scores"] = scores
 
         #####################################
@@ -309,7 +232,7 @@ def run_activePmSATLearn(
             # we have to do glitch processing first, before appending anything to traces!
             postprocessing_additional_traces_glitch = []
             for hyp, hyp_stoc, pmsat_info in hypotheses.values():
-                additional_traces = do_glitch_processing(hyp, pmsat_info, hyp_stoc, traces)
+                additional_traces = _do_glitch_processing(hyp, pmsat_info, hyp_stoc, traces)
                 postprocessing_additional_traces_glitch.extend(additional_traces)
 
             remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)  # TODO: does de-duplication affect anything? check!
@@ -323,7 +246,7 @@ def run_activePmSATLearn(
         if random_state_exploration:
             postprocessing_additional_traces_state_expl = []
             for hyp, hyp_stoc, pmsat_info in hypotheses.values():
-                additional_traces = do_state_exploration(hyp)
+                additional_traces = _do_state_exploration(hyp)
                 postprocessing_additional_traces_state_expl.extend(additional_traces)
 
             remove_duplicate_traces(traces, postprocessing_additional_traces_state_expl)  # TODO: does de-duplication affect anything? check!
@@ -395,6 +318,7 @@ def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: 
         learned[num_states] = hyp, h_stoc, pmsat_info
     return learned
 
+
 def find_index_of_unimodal_peak(scores: dict[int, float]) -> int | None:
     if scores is None:
         return None
@@ -403,17 +327,18 @@ def find_index_of_unimodal_peak(scores: dict[int, float]) -> int | None:
     if all(vals[i] <= vals[i + 1] for i in range(0, peak_index)) and all(vals[j] >= vals[j+1] for j in range(peak_index, len(vals) - 1)):
         return peak_index
 
+
 def find_index_of_absolute_peak(scores: dict[int, float]) -> int:
     if scores is None:
         return None
     vals = list(scores.values())
     return vals.index(max(vals))
 
+
 def get_num_states_from_scores_index(scores: dict[int, float], index: int | None) -> int | None:
     if index is None:
         return None
     return list(scores.keys())[index]
-
 
 
 def sanity_checks(hyp: SupportedAutomaton) -> tuple[bool, str]:
@@ -544,29 +469,8 @@ def is_positioned_correctly(sliding_window_size, peak_index, current_min_num_sta
         return True
     return False
 
-def get_incongruent_traces(glitchless_trace, traces) -> set[int]:
-    glitchlass_trace_inputs = [step[0] for step in glitchless_trace[1:]]
-    glitchless_trace_outputs = [step[1] for step in glitchless_trace[1:]]
-    traces_to_remove = set()
-    for t_i, trace in enumerate(traces):
-        assert glitchless_trace[0] == trace[0], f"Different initial outputs!"
-        trace_inputs = [step[0] for step in trace[1:]]
-        trace_outputs = [step[1] for step in trace[1:]]
-        for s_i in range(min(len(glitchlass_trace_inputs), len(trace_inputs))):
-            if trace_inputs[s_i] != glitchlass_trace_inputs[s_i]:
-                break
-            if trace_outputs[s_i] != glitchless_trace_outputs[s_i]:
-                logger.debug(
-                    f"Different outputs at step {s_i}! Glitchless trace contains output '{glitchless_trace_outputs[s_i]}' "
-                    f"for input '{glitchlass_trace_inputs[s_i]}', but trace {t_i} ({trace}) contains '{trace_outputs[s_i]}'. Removing trace.")
-                traces_to_remove.add(t_i)
-                break
-            assert trace_inputs[s_i] == glitchlass_trace_inputs[s_i]
-            assert trace_outputs[s_i] == glitchless_trace_outputs[s_i]
-    return traces_to_remove
 
-
-def _do_state_exploration(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
+def do_state_exploration(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
                           all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
     logger.debug(f"Do state exploration of {len(hyp.states)}-state hypothesis {id(hyp)} to produce new traces...")
 
@@ -588,91 +492,14 @@ def _do_state_exploration(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: 
 
     return new_traces
 
-def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
-                                      all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
-    """
-    Visit every state in the hypothesis and check if we have a transition for every input.
-    If we don't have a transition there, query the SUL for additional traces of
-    (state.prefix + input + (alphabet^extension_length)
-    :param hyp: current hypothesis
-    :param sul: system under learning
-    :param alphabet: input alphabet
-    :param all_input_combinations: all combinations of length <extension length> of the input alphabet
-    :return: a list of additional traces
-    """
-    logger.debug("Try to force input completeness in hypothesis to produce new traces...")
-    if hyp.is_input_complete():
-        logger.debug("Hypothesis is already input complete. In the current implementation, this step won't be useful.")
 
-    hyp.compute_prefixes()
-    new_traces = []
-    for state in hyp.states:
-        if state.prefix is None:
-            continue  # ignore unreachable states (reachable only through glitches)
-
-        for inp in alphabet:
-            if inp not in state.transitions:
-                logger.debug(f"Hypothesis didn't have a transition from state {state.state_id} "
-                             f"(output='{state.output}', prefix={state.prefix}) with input '{inp}' - create traces!")
-
-                for suffix in all_input_combinations:
-                    trace = trace_query(sul, list(state.prefix) + [inp] + list(suffix))
-                    new_traces.append(trace)
-
-    if hyp.is_input_complete():
-        assert not new_traces, "Should not create new traces if already input complete!"
-
-    return new_traces
-
-
-def _do_passive_counterexample_processing(sul: SupportedSUL, hypotheses: HypothesesWindow, all_input_combinations: list[tuple[Input, ...]]):
+def do_passive_counterexample_processing(sul: SupportedSUL, hypotheses: HypothesesWindow, all_input_combinations: list[tuple[Input, ...]]):
     combinations = itertools.combinations(hypotheses.values(), 2)
     new_traces = []
     for hyp_a, hyp_b in combinations:
         cex = hyp_a.find_distinguishing_seq(hyp_a.initial_state, hyp_b.initial_state)
-        new_traces.append(active_pmsatlearn.learnalgo._do_cex_processing(sul, cex, all_input_combinations))
+        new_traces.append(do_cex_processing(sul, cex, all_input_combinations))
 
-    return new_traces
-
-
-def _do_glitch_processing(sul: SupportedSUL, hyp: SupportedAutomaton, pmsat_info: dict[str, Any], hyp_stoc: SupportedAutomaton,
-                         traces_used_to_learn_hyp: list[Trace], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
-    """
-    Glitch processing. For every glitched transition from state s with input i, query traces for
-    s.prefix + i + (alphabet^extension_length). Note that only one prefix is queried, the one of the state with
-    the glitched transition.
-    This is currently a somewhat hacky implementation, relying on hyp_stoc. TODO: replay on hyp instead
-    :param sul: system under learning
-    :param pmsat_info: info dict returned from last pmsat_learn call
-    :param hyp_stoc: stochastic hypothesis returned from last pmsat_learn call
-    :param all_input_combinations: all combinations of length <extension length> of the input alphabet
-    :param log: a function to log info to
-    :return: list of new traces
-    """
-    logger.debug(f"Use glitched transitions of {len(hyp.states)}-state hypothesis {id(hyp)} produce new traces...")
-    hyp_stoc.compute_prefixes()
-    new_traces = []
-    all_glitched_steps = [traces_used_to_learn_hyp[traces_index][trace_index] for (traces_index, trace_index) in
-                          pmsat_info["glitch_steps"]]
-    # all_glitched_trans = [() for (s0_id, inp, s1_id) in pmsat_info["glitch_trans"]]
-
-    for state in hyp_stoc.states:
-        for inp, next_state in state.transitions.items():
-            if inp.startswith("!"):  # glitched transition
-                state_prefix = [get_input_from_stoc_trans(i) for i in state.prefix]
-                glitched_input = get_input_from_stoc_trans(inp)
-                assert (glitched_input, next_state.output) in all_glitched_steps, (f"The tuple {(glitched_input, next_state.output)}" 
-                                                                                   f"was not found in {all_glitched_steps=}")
-                logger.debug(f"Hypothesis contained a glitched transition from state {state.state_id} (output='{state.output}', "
-                             f"prefix={state_prefix}) with input '{glitched_input}' to state {next_state.state_id} - create traces!")
-
-                assert (state.state_id, glitched_input, next_state.state_id) in pmsat_info["glitch_trans"], f"{pmsat_info['glitch_trans']=}"
-
-                for suffix in all_input_combinations:
-                    trace = trace_query(sul, state_prefix + [glitched_input] + list(suffix))
-                    new_traces.append(trace)
-
-    logger.debug(f"Produced {len(new_traces)} new traces from glitch processing of {len(hyp.states)}-state hypothesis {id(hyp)}")
     return new_traces
 
 
