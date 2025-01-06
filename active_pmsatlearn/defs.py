@@ -10,5 +10,5 @@ SupportedAutomaton: TypeAlias = MooreMachine | MealyMachine
 SupportedSUL: TypeAlias = MooreSUL | MealySUL
 PossibleHypothesis: TypeAlias = SupportedAutomaton | None
 PmSatLearningInfo: TypeAlias = dict[str, Any]
-HypothesesWindow: TypeAlias = dict[int, tuple[PossibleHypothesis, PossibleHypothesis, PmSatLearningInfo]]
+HypothesesWindow: TypeAlias = dict[int, tuple[SupportedAutomaton, SupportedAutomaton, PmSatLearningInfo]]
 HeuristicFunction: TypeAlias = Callable[[SupportedAutomaton, PmSatLearningInfo, list[Trace]], float]

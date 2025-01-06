@@ -43,7 +43,7 @@ def do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL,
 
     return new_traces
 
-def do_cex_processing(sul: SupportedSUL, cex: Trace, all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+def do_cex_processing(cex: Trace, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
     """
     Counterexample processing, like in Active RPNI
     :param sul: system under learning
@@ -62,8 +62,8 @@ def do_cex_processing(sul: SupportedSUL, cex: Trace, all_input_combinations: lis
     return new_traces
 
 
-def do_glitch_processing(sul: SupportedSUL, hyp: SupportedAutomaton, pmsat_info: dict[str, Any], hyp_stoc: SupportedAutomaton,
-                         traces_used_to_learn_hyp: list[Trace], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+def do_glitch_processing(hyp: SupportedAutomaton, pmsat_info: dict[str, Any], hyp_stoc: SupportedAutomaton,
+                         traces_used_to_learn_hyp: list[Trace], sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
     """
     Glitch processing. For every glitched transition from state s with input i, query traces for
     s.prefix + i + (alphabet^extension_length). Note that only one prefix is queried, the one of the state with

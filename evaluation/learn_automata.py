@@ -176,15 +176,15 @@ def print_results_info(results: list[dict]):
     num_results = len(results)
     num_valid = len(valid_results)
     num_learned = sum(r['learned_correctly'] for r in results)
-    num_aborted = sum(r['timed_out'] for r in valid_results)
+    num_timed_out = sum(r['timed_out'] for r in valid_results)
     num_bisimilar = sum(r['bisimilar'] for r in results)
 
     print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
     if num_valid > 0:
         print(f"Learned correctly: {num_learned} of {num_valid} ({num_learned / num_valid * 100:.2f}%)")
         print(f"Bisimilar: {num_bisimilar} of {num_valid} ({num_bisimilar / num_valid * 100:.2f}%)")
-    if num_aborted:
-        print(f"Aborted: {num_aborted} of {num_results} ({num_aborted / num_results * 100:.2f}%)")
+    if num_timed_out:
+        print(f"Timed out: {num_timed_out} of {num_results} ({num_timed_out / num_results * 100:.2f}%)")
     sep()
 
     num_automata = len(set(r['original_automaton'] for r in results))

@@ -86,12 +86,12 @@ def run_activePmSATLearn(
                                                 all_input_combinations=all_input_combinations)
 
     def _do_cex_processing(current_cex):
-        return do_cex_processing(sul=sul, cex=current_cex, all_input_combinations=all_input_combinations)
+        return do_cex_processing(cex=current_cex, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations)
 
     def _do_glitch_processing(current_hyp: SupportedAutomaton, current_pmsat_info: dict[str, Any],
                              current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
-        return do_glitch_processing(sul=sul, hyp=current_hyp, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
-                                    traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations)
+        return do_glitch_processing(hyp=current_hyp, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
+                                    traces_used_to_learn_hyp=current_traces, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations)
 
     logger.debug(f"Creating initial traces...")
     traces = [trace_query(sul, input_combination) for input_combination in all_input_combinations]

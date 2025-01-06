@@ -1,3 +1,4 @@
+import copy
 import itertools
 import logging
 from collections import defaultdict
@@ -61,15 +62,16 @@ def run_activePmSATLearn(
     automaton_type: Literal["mealy", "moore"],
     extension_length: int = 2,
     sliding_window_size: int = 5,
-    heuristic_function: str | HeuristicFunction = "simple",
+    heuristic_function: str | HeuristicFunction = "intermediary",
     pm_strategy: Literal["lsu", "fm", "rc2"] = "rc2",
     timeout: int | float | None = None,
     cost_scheme: Literal["per_step", "per_transition"] = "per_step",
     input_completeness_processing: bool = False,
     glitch_processing: bool = False,
-    counterexample_processing: bool = False,
+    replay_glitches: bool = True,
+    counterexample_processing: bool = True,
     discard_glitched_traces: bool = False,
-    random_state_exploration: bool = True,
+    random_state_exploration: bool = False,
     return_data: bool = True,
     print_level: int | None = 2,
 ) -> (
@@ -99,6 +101,7 @@ def run_activePmSATLearn(
                         3 - pmsat-learn output and logging of traces
     """
     assert sliding_window_size % 2 == 1, "Sliding window size must be odd (for now)"
+    assert sliding_window_size >= 3, "Sliding window must have a size of at least 3"
     # additional input verification happens in run_pmSATLearn
 
     match heuristic_function:
@@ -121,28 +124,21 @@ def run_activePmSATLearn(
 
     all_input_combinations = list(itertools.product(alphabet, repeat=extension_length))
 
-    final_hyps_and_info = None, None, None
+    result = None, None, None
     previous_hypotheses = None
     previous_scores = None
 
-    def _do_input_completeness_processing(current_hyp):
-        return do_input_completeness_processing(hyp=current_hyp, sul=sul, alphabet=alphabet,
-                                                all_input_combinations=all_input_combinations)
-
-    def _do_glitch_processing(current_hyp: SupportedAutomaton, current_pmsat_info: dict[str, Any],
-                             current_hyp_stoc: SupportedAutomaton, current_traces: list[Trace]):
-        return do_glitch_processing(sul=sul, hyp=current_hyp, pmsat_info=current_pmsat_info, hyp_stoc=current_hyp_stoc,
-                                    traces_used_to_learn_hyp=current_traces, all_input_combinations=all_input_combinations)
-
-    def _do_state_exploration(hyp: SupportedAutomaton):
-        return do_state_exploration(hyp=hyp, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations)
+    common_processing_kwargs = dict(
+        sul=sul,
+        alphabet=alphabet,
+        all_input_combinations=all_input_combinations,
+    )
 
     logger.debug("Creating initial traces...")
     traces = [trace_query(sul, input_combination) for input_combination in all_input_combinations]
     logger.debug_ext(f"Initial traces: {traces}")
 
-    # start with minimum possible number of states
-    min_num_states = get_num_outputs(traces)
+    min_num_states = get_num_outputs(traces)  # start with minimum possible number of states
 
     while not (timed_out := (time.time() >= must_end_by)):
         logger.info(f"Starting learning round {(learning_rounds := learning_rounds + 1)}")
@@ -161,15 +157,23 @@ def run_activePmSATLearn(
                                           pm_strategy=pm_strategy,
                                           cost_scheme=cost_scheme,
                                           print_info=print_level == 3)
-        # assert len(hypotheses) == sliding_window_size  # might not hold with timeouts
+        assert not any((info["timed_out"] or (h is None)) for h, h_s, info in hypotheses.values()), "Sliding window should not contained timed-out hypotheses"
+        traces_used_to_learn = copy.deepcopy(traces)
 
-        if (num_timed_out := sum(1 if info["timed_out"] else 0 for h, h_s, info in hypotheses.values())) == len(hypotheses):
-            timed_out = True
-            break
-        elif num_timed_out > 0:
-            assert num_timed_out == 1, "There should only be one timed out hypothesis (the last one)"
-            assert hypotheses[-1][-1]["timed_out"]
-            hypotheses.pop(-1)  # remove timed-out hypothesis
+        if len(hypotheses) != sliding_window_size:
+            # if we have a timeout during learning of the sliding window, no further hypotheses will be learned;
+            # the returned hypotheses window contains only those that were successfully learnt
+            last_learnt_num_states = max(hypotheses.keys()) if len(hypotheses) != 0 else min_num_states - 1
+            logger.debug(f"Learning of all hypotheses after {last_learnt_num_states} states timed out. ")
+            detailed_learning_info[learning_rounds]["timed_out"] = True
+            detailed_learning_info[learning_rounds]["last_learnt"] = last_learnt_num_states
+
+            if (last_learnt_num_states + 1) <= (min_num_states + (sliding_window_size // 2)):
+                logger.debug(f"First timed-out hypothesis was in left side of sliding window. Returning peak hypothesis from previous round.")
+                timed_out = True
+                break
+            else:
+                logger.debug(f"First timed-out hypothesis was in right side of sliding window. Continuing with truncated window.")
 
         #####################################
         #           PREPROCESSING           #
@@ -179,17 +183,23 @@ def run_activePmSATLearn(
             # TODO: could this lead to an infinite loop?
             preprocessing_additional_traces = []
             for hyp, _, _ in hypotheses.values():
-                additional_traces = _do_input_completeness_processing(current_hyp=hyp)
+                additional_traces = do_input_completeness_processing(hyp=hyp, **common_processing_kwargs)
                 preprocessing_additional_traces.extend(additional_traces)
 
             remove_duplicate_traces(traces, preprocessing_additional_traces)  # TODO: does de-duplication affect anything? check!
-            logger.debug(f"Produced {len(preprocessing_additional_traces)} additional traces from input completeness processing")
-            logger.debug_ext(f"Additional traces from input completeness processing: {preprocessing_additional_traces}")
-            detailed_learning_info[learning_rounds]["preprocessing_additional_traces"] = len(preprocessing_additional_traces)
+            log_and_store_additional_traces(preprocessing_additional_traces, detailed_learning_info[learning_rounds],
+                                            "input completeness", "preprocessing_additional_traces")
 
             if preprocessing_additional_traces:
                 traces += preprocessing_additional_traces
                 continue
+        else:
+            # make input complete anyways, such that we don't have to check whether transitions exist during postprocessing
+            for hyp, _, _ in hypotheses.values():
+                if not hyp.is_input_complete():
+                    logger.debug(f"Input completeness processing is deactivated, but {len(hyp.states)}-state hypothesis "
+                                 f"{id(hyp)} was not input complete. Force input completeness via self-loops.")
+                    hyp.make_input_complete()
 
         #####################################
         #              SCORING              #
@@ -213,7 +223,7 @@ def run_activePmSATLearn(
 
         match action:
             case Terminate(hyp, hyp_stoc, pmsat_info):
-                final_hyps_and_info = hyp, hyp_stoc, pmsat_info
+                result = hyp, hyp_stoc, pmsat_info
                 break
             case Continue(next_min_num_states):
                 if next_min_num_states is not None:
@@ -229,61 +239,70 @@ def run_activePmSATLearn(
         logger.debug(f"Beginning postprocessing of hypotheses")
 
         if glitch_processing:
-            # we have to do glitch processing first, before appending anything to traces!
             postprocessing_additional_traces_glitch = []
             for hyp, hyp_stoc, pmsat_info in hypotheses.values():
-                additional_traces = _do_glitch_processing(hyp, pmsat_info, hyp_stoc, traces)
+                additional_traces = do_glitch_processing(hyp=hyp, pmsat_info=pmsat_info, hyp_stoc=hyp_stoc,
+                                                         traces_used_to_learn_hyp=traces_used_to_learn, **common_processing_kwargs)
                 postprocessing_additional_traces_glitch.extend(additional_traces)
 
             remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)  # TODO: does de-duplication affect anything? check!
-
-            logger.debug(f"Produced {len(postprocessing_additional_traces_glitch)} additional traces from glitch processing")
-            logger.debug_ext(f"Additional traces from glitch processing: {postprocessing_additional_traces_glitch}")
-            detailed_learning_info[learning_rounds]["postprocessing_additional_traces_glitch"] = len(postprocessing_additional_traces_glitch)
+            log_and_store_additional_traces(postprocessing_additional_traces_glitch, detailed_learning_info[learning_rounds], "glitch")
 
             traces = traces + postprocessing_additional_traces_glitch
+
+        if counterexample_processing:
+            postprocessing_additional_traces_counterexample = do_passive_counterexample_processing(hypotheses, **common_processing_kwargs)
+
+            remove_duplicate_traces(traces, postprocessing_additional_traces_counterexample)
+            log_and_store_additional_traces(postprocessing_additional_traces_counterexample, detailed_learning_info[learning_rounds], "counterexample")
+
+            traces = traces + postprocessing_additional_traces_counterexample
+
+        if replay_glitches:
+            postprocessing_additional_traces_replay = []
+            for hyp, hyp_stoc, pmsat_info in hypotheses.values():
+                additional_traces = do_replay_glitches(pmsat_info=pmsat_info, traces_used_to_learn=traces_used_to_learn, hyp=hyp, **common_processing_kwargs)
+                postprocessing_additional_traces_replay.extend(additional_traces)
+
+            remove_duplicate_traces(traces, postprocessing_additional_traces_replay)
+            log_and_store_additional_traces(postprocessing_additional_traces_replay, detailed_learning_info[learning_rounds], "replay")
+
+            traces = traces + postprocessing_additional_traces_replay
 
         if random_state_exploration:
             postprocessing_additional_traces_state_expl = []
             for hyp, hyp_stoc, pmsat_info in hypotheses.values():
-                additional_traces = _do_state_exploration(hyp)
+                additional_traces = do_state_exploration(hyp=hyp, **common_processing_kwargs)
                 postprocessing_additional_traces_state_expl.extend(additional_traces)
 
             remove_duplicate_traces(traces, postprocessing_additional_traces_state_expl)  # TODO: does de-duplication affect anything? check!
-
-            logger.debug(f"Produced {len(postprocessing_additional_traces_state_expl)} additional traces from state exploration")
-            logger.debug_ext(f"Additional traces from state exploration: {postprocessing_additional_traces_state_expl}")
-            detailed_learning_info[learning_rounds]["postprocessing_additional_traces_state_exploration"] = len(postprocessing_additional_traces_state_expl)
+            log_and_store_additional_traces(postprocessing_additional_traces_state_expl, detailed_learning_info[learning_rounds], "state exploration")
 
             traces = traces + postprocessing_additional_traces_state_expl
-
-        # TODO: possible postprocessing idea: do bisimilarity checks between all current hypotheses, and use ARPNI-cex-processing to produce new traces
 
         if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
             logger.warning(f"No additional traces were produced during this round!")
 
         if discard_glitched_traces:
             raise NotImplementedError
-            # possibly remove traces if too much counter evidence exists
-            # probably won't do much though...
-
-            # traces_to_remove = get_incongruent_traces(glitchless_trace=cex_trace, traces=traces)
-            # logger.debug(f"Removing {len(traces_to_remove)} traces because they were incongruent with counterexample")
-            # detailed_learning_info[learning_rounds]["removed_traces"] = len(traces_to_remove)
-            # traces = [t for t_i, t in enumerate(traces) if t_i not in traces_to_remove]
 
         previous_hypotheses = hypotheses
         previous_scores = scores
         min_num_states = max(min_num_states, get_num_outputs(traces))
 
+    #####################################
+    #          RETURN RESULT            #
+    #####################################
+
     if timed_out:
         logger.warning(f"Aborted learning after reaching timeout (start: {start_time:.2f}, now: {time.time():.2f}, timeout: {timeout})")
         if previous_scores:
+            logger.debug(f"Returning peak hypothesis of previous round")
             previous_peak = find_index_of_absolute_peak(previous_scores)
             previous_peak_num_states = get_num_states_from_scores_index(previous_scores, previous_peak)
-            final_hyps_and_info = previous_hypotheses[previous_peak_num_states]
+            result = previous_hypotheses[previous_peak_num_states]
 
-    hyp, hyp_stoc, pmsat_info = final_hyps_and_info
+    hyp, hyp_stoc, pmsat_info = result
     if return_data:
         total_time = round(time.time() - start_time, 2)
 
@@ -297,10 +316,18 @@ def run_activePmSATLearn(
         return hyp
 
 
+def log_and_store_additional_traces(additional_traces: list[Trace], current_learning_info: dict, name: str, key: str = None):
+    logger.debug(f"Produced {len(additional_traces)} additional traces from {name} processing")
+    logger.debug_ext(f"Additional traces from {name} processing: {additional_traces}")
+    if key is None:
+        key = f"postprocessing_additional_traces_{'_'.join(name)}"
+    current_learning_info[key] = additional_traces
+
+
 def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: list[Trace], must_end_by: float = 0.0,
                          **common_pmsatlearn_kwargs) -> HypothesesWindow:
     logger.debug(f"Running pmSATLearn to learn {sliding_window_size} hypotheses with between {min_num_states} and "
-                 f"{min_num_states + sliding_window_size} states from {len(traces)} traces")
+                 f"{min_num_states + sliding_window_size - 1} states from {len(traces)} traces")
     num_outputs = get_num_outputs(traces)
     learned = {}
     for i in range(sliding_window_size):
@@ -383,6 +410,8 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
                 logger.debug("No unimodal peak found in current and previous round; using absolute peak.")
                 peak_index = current_learning_info["absolute_peak_index"] = find_index_of_absolute_peak(current_scores)
                 peak_num_states = current_learning_info["absolute_peak_num_states"] = get_num_states_from_scores_index(current_scores, peak_index)
+                prev_peak_index = current_learning_info["absolute_prev_peak_index"] = find_index_of_absolute_peak(previous_scores)
+                prev_peak_num_states = current_learning_info["absolute_prev_peak_num_states"] = get_num_states_from_scores_index(previous_scores, prev_peak_index)
             case _, _:
                 logger.debug("No unimodal peak found in current round; continuing with same window after collecting more traces")
                 return Continue()
@@ -493,14 +522,34 @@ def do_state_exploration(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: l
     return new_traces
 
 
-def do_passive_counterexample_processing(sul: SupportedSUL, hypotheses: HypothesesWindow, all_input_combinations: list[tuple[Input, ...]]):
-    combinations = itertools.combinations(hypotheses.values(), 2)
+def do_passive_counterexample_processing(hypotheses: HypothesesWindow, sul: SupportedSUL, alphabet: list[Input],
+                                         all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+    logger.debug(f"Do passive counterexample processing for hypotheses window of size {len(hypotheses)}...")
+    hyps: list[SupportedAutomaton] = [h for h, h_s, i in hypotheses.values()]
+    combinations = itertools.combinations(hyps, 2)
     new_traces = []
     for hyp_a, hyp_b in combinations:
-        cex = hyp_a.find_distinguishing_seq(hyp_a.initial_state, hyp_b.initial_state)
-        new_traces.append(do_cex_processing(sul, cex, all_input_combinations))
+        cex = hyp_a.find_distinguishing_seq(hyp_a.initial_state, hyp_b.initial_state, alphabet)
+        if cex is not None:
+            logger.debug_ext(f"CEX between {len(hyp_a.states)}-state hypothesis {id(hyp_a)} and {len(hyp_b.states)}-state hypothesis {id(hyp_b)}: {cex}")
+            new_traces.extend(do_cex_processing(cex=cex, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations))
 
     return new_traces
+
+
+def do_replay_glitches(pmsat_info: PmSatLearningInfo, traces_used_to_learn: list[Trace], hyp: SupportedAutomaton,
+                       sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+    num_glitch_traces = len(set(trace_index for trace_index, step_index in pmsat_info["glitch_steps"]))
+    logger.debug(f"Replaying {num_glitch_traces} traces with glitched transitions of {len(hyp.states)}-state hypothesis {id(hyp)}...")
+
+    new_traces = []
+    for trace_index, step_index in pmsat_info["glitch_steps"]:
+        glitch_trace = traces_used_to_learn[trace_index]
+        new_traces.append(trace_query(sul, [i for i, o in glitch_trace[1:]]))
+
+    return new_traces
+
+
 
 
 def build_info_dict(hyp, sul, learning_rounds, total_time,
