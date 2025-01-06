@@ -8,7 +8,7 @@ from aalpy.SULs import MooreSUL
 from aalpy.utils import load_automaton_from_file
 from aalpy.utils import bisimilar
 
-from active_pmsatlearn.learnalgo2 import run_activePmSATLearn
+from active_pmsatlearn.learnalgo_nomat import run_activePmSATLearn
 from evaluation.defs import oracles
 from evaluation.learn_automata import setup_sul
 

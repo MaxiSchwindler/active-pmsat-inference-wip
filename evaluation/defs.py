@@ -4,8 +4,8 @@ import aalpy.learning_algs
 from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.oracles import RandomWMethodEqOracle
 
-import active_pmsatlearn.learnalgo2
-from active_pmsatlearn.learnalgo import run_activePmSATLearn
+import active_pmsatlearn.learnalgo_nomat
+from active_pmsatlearn.learnalgo_mat import run_activePmSATLearn
 from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
 from evaluation.utils import dict_product
 
@@ -59,7 +59,7 @@ for combination in dict_product(apmsl_choices):
         algorithms[alg_name] = run_apml_config
 
 
-algorithms["NAPMSL(3)"] = partial(active_pmsatlearn.learnalgo2.run_activePmSATLearn, **apmsl_common_args, **common_args)
+algorithms["NAPMSL(3)"] = partial(active_pmsatlearn.learnalgo_nomat.run_activePmSATLearn, **apmsl_common_args, **common_args)
 
 
 # create .unique_keywords attribute

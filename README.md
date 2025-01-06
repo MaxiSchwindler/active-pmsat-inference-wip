@@ -25,7 +25,7 @@ Work-in-progress of an active version of the [PMSAT-inference](https://gitlab.co
 
 ### [active_pmsatlearn/](active_pmsatlearn)
 
-Contains the active algorithm (in [active_pmsatlearn/learnalgo.py](active_pmsatlearn/learnalgo.py))
+Contains the active algorithm (in [active_pmsatlearn/learnalgo.py](active_pmsatlearn/learnalgo_mat.py))
 
 ### [evaluation/](evaluation)
 
