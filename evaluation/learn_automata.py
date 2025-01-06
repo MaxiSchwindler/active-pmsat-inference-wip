@@ -180,8 +180,9 @@ def print_results_info(results: list[dict]):
     num_bisimilar = sum(r['bisimilar'] for r in results)
 
     print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
-    print(f"Learned correctly: {num_learned} of {num_valid} ({num_learned / num_valid * 100:.2f}%)")
-    print(f"Bisimilar: {num_bisimilar} of {num_valid} ({num_bisimilar / num_valid * 100:.2f}%)")
+    if num_valid > 0:
+        print(f"Learned correctly: {num_learned} of {num_valid} ({num_learned / num_valid * 100:.2f}%)")
+        print(f"Bisimilar: {num_bisimilar} of {num_valid} ({num_bisimilar / num_valid * 100:.2f}%)")
     if num_aborted:
         print(f"Aborted: {num_aborted} of {num_results} ({num_aborted / num_results * 100:.2f}%)")
     sep()
@@ -263,8 +264,12 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     logger.info(f"Running {algorithm_name} with keywords {algorithm.unique_keywords} and oracle '{oracle_type}' on an "
                 f"automaton with {automaton.size} states, {len(automaton.get_input_alphabet())} inputs, {len(output_alphabet)} outputs. "
                 f"({automaton_file})")
+    alg_kwargs = dict(alphabet=automaton.get_input_alphabet(), sul=sul, print_level=print_level)
+    if oracle is not None:
+        alg_kwargs['eq_oracle'] = oracle
+
     try:
-        learned_model, info = algorithm(alphabet=automaton.get_input_alphabet(), sul=sul, eq_oracle=oracle, print_level=print_level)
+        learned_model, info = algorithm(**alg_kwargs)
         info["max_steps_reached"] = False
     except MaxStepsReached:
         learned_model = None

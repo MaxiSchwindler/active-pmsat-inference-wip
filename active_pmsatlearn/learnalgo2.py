@@ -143,8 +143,9 @@ def run_activePmSATLearn(
     timeout: int | float | None = None,
     cost_scheme: Literal["per_step", "per_transition"] = "per_step",
     input_completeness_processing: bool = False,
-    glitch_processing: bool = True,
-    discard_glitched_traces: bool = True,
+    glitch_processing: bool = False,
+    counterexample_processing: bool = False,
+    discard_glitched_traces: bool = False,
     random_state_exploration: bool = True,
     return_data: bool = True,
     print_level: int | None = 2,
@@ -350,6 +351,7 @@ def run_activePmSATLearn(
 
         previous_hypotheses = hypotheses
         previous_scores = scores
+        min_num_states = max(min_num_states, get_num_outputs(traces))
 
     if timed_out:
         logger.warning(f"Aborted learning after reaching timeout (start: {start_time:.2f}, now: {time.time():.2f}, timeout: {timeout})")
@@ -376,10 +378,11 @@ def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: 
                          **common_pmsatlearn_kwargs) -> HypothesesWindow:
     logger.debug(f"Running pmSATLearn to learn {sliding_window_size} hypotheses with between {min_num_states} and "
                  f"{min_num_states + sliding_window_size} states from {len(traces)} traces")
+    num_outputs = get_num_outputs(traces)
     learned = {}
     for i in range(sliding_window_size):
         num_states = min_num_states + i
-        assert num_states >= get_num_outputs(traces)
+        assert num_states >= num_outputs
         logger.debug(f"Learning {num_states}-state hypothesis...")
         hyp, h_stoc, pmsat_info = run_pmSATLearn(data=traces,
                                                  n_states=num_states,
@@ -618,6 +621,16 @@ def _do_input_completeness_processing(hyp: SupportedAutomaton, sul: SupportedSUL
 
     if hyp.is_input_complete():
         assert not new_traces, "Should not create new traces if already input complete!"
+
+    return new_traces
+
+
+def _do_passive_counterexample_processing(sul: SupportedSUL, hypotheses: HypothesesWindow, all_input_combinations: list[tuple[Input, ...]]):
+    combinations = itertools.combinations(hypotheses.values(), 2)
+    new_traces = []
+    for hyp_a, hyp_b in combinations:
+        cex = hyp_a.find_distinguishing_seq(hyp_a.initial_state, hyp_b.initial_state)
+        new_traces.append(active_pmsatlearn.learnalgo._do_cex_processing(sul, cex, all_input_combinations))
 
     return new_traces
 

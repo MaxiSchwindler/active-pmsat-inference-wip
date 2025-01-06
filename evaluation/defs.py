@@ -4,6 +4,7 @@ import aalpy.learning_algs
 from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.oracles import RandomWMethodEqOracle
 
+import active_pmsatlearn.learnalgo2
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
 from evaluation.utils import dict_product
@@ -40,7 +41,7 @@ apmsl_common_args = dict(
 )
 
 apmsl_choices = dict(
-    extension_length=(2,),
+    extension_length=(2,3),
     # cex_processing=(True, False),
     glitch_processing=(True, False),
     discard_glitched_traces=(True, False),
@@ -49,12 +50,17 @@ apmsl_choices = dict(
 
 # add all APMSL(n)_no_<> combinations
 for combination in dict_product(apmsl_choices):
-    alg_name = f"APMSL({combination['extension_length']})"
-    for k, v in combination.items():
-        if not v:
-            alg_name += f"_no_{''.join(a[0] for a in k.split('_'))}"
-    run_apml_config = partial(run_activePmSATLearn, **apmsl_common_args, **combination, **common_args)
-    algorithms[alg_name] = run_apml_config
+    for name in ("APMSL",): #"NAPMSL"):
+        alg_name = f"{name}({combination['extension_length']})"
+        for k, v in combination.items():
+            if not v:
+                alg_name += f"_no_{''.join(a[0] for a in k.split('_'))}"
+        run_apml_config = partial(run_activePmSATLearn, **apmsl_common_args, **combination, **common_args)
+        algorithms[alg_name] = run_apml_config
+
+
+algorithms["NAPMSL(3)"] = partial(active_pmsatlearn.learnalgo2.run_activePmSATLearn, **apmsl_common_args, **common_args)
+
 
 # create .unique_keywords attribute
 for alg in algorithms.values():
@@ -78,6 +84,7 @@ class RobustRandomWalkOracle(RobustRandomWalkEqOracle):
 
 
 oracles = {
+    "None": lambda sul: None,
     "Perfect": RobustPerfectMooreOracle,
     "Random": RobustRandomWalkOracle,
 }
