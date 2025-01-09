@@ -58,8 +58,38 @@ for combination in dict_product(apmsl_choices):
         run_apml_config = partial(run_activePmSATLearn, **apmsl_common_args, **combination, **common_args)
         algorithms[alg_name] = run_apml_config
 
+mat_kwargs = dict(
+    cex_processing=True,
+    add_cex_as_hard_clauses=True,  # does not work due to unsat currently
+    discard_glitched_traces=True,
+)
 
-algorithms["NAPMSL(3)"] = partial(active_pmsatlearn.learnalgo_nomat.run_activePmSATLearn, **apmsl_common_args, **common_args)
+algorithms["NAPMSL(3)_wcp"] = partial(active_pmsatlearn.learnalgo_nomat.run_activePmSATLearn,
+                                      extension_length=3,
+                                      window_cex_processing=True,
+                                      **apmsl_common_args,
+                                      **mat_kwargs,
+                                      **common_args)
+algorithms["NAPMSL(3)_wcp_w3"] = partial(active_pmsatlearn.learnalgo_nomat.run_activePmSATLearn,
+                                         sliding_window_size=3,
+                                         extension_length=3,
+                                         window_cex_processing=True,
+                                         **apmsl_common_args,
+                                         **mat_kwargs,
+                                         **common_args)
+algorithms["NAPMSL(3)_no_wcp"] = partial(active_pmsatlearn.learnalgo_nomat.run_activePmSATLearn,
+                                         extension_length=3,
+                                         window_cex_processing=False,
+                                         **apmsl_common_args,
+                                         **mat_kwargs,
+                                         **common_args)
+algorithms["NAPMSL(3)_no_wcp_w3"] = partial(active_pmsatlearn.learnalgo_nomat.run_activePmSATLearn,
+                                            extension_length=3,
+                                            sliding_window_size=3,
+                                            window_cex_processing=False,
+                                            **apmsl_common_args,
+                                            **mat_kwargs,
+                                            **common_args)
 
 
 # create .unique_keywords attribute

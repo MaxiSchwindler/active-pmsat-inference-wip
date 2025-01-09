@@ -8,7 +8,7 @@ DEBUG_LEVEL = NONE
 
 
 def log(msg, level=INFO):
-    if level >= DEBUG_LEVEL:
+    if DEBUG_LEVEL >= level:
         print(msg)
 
 

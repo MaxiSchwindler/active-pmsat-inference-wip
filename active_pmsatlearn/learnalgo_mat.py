@@ -12,7 +12,7 @@ from pmsatlearn import run_pmSATLearn
 
 from active_pmsatlearn.defs import *
 from active_pmsatlearn.utils import *
-from active_pmsatlearn.common import get_incongruent_traces, do_cex_processing, do_glitch_processing, do_input_completeness_processing
+from active_pmsatlearn.common import get_incongruent_traces, do_cex_processing, do_glitch_processing, do_input_completeness_preprocessing
 from active_pmsatlearn.oracles import RobustEqOracleMixin
 
 from active_pmsatlearn.log import get_logger, DEBUG_EXT
@@ -82,8 +82,8 @@ def run_activePmSATLearn(
                                     print_info=print_level > 2)
 
     def _do_input_completeness_processing(current_hyp):
-        return do_input_completeness_processing(hyp=current_hyp, sul=sul, alphabet=alphabet,
-                                                all_input_combinations=all_input_combinations)
+        return do_input_completeness_preprocessing(hyp=current_hyp, sul=sul, alphabet=alphabet,
+                                                   all_input_combinations=all_input_combinations)
 
     def _do_cex_processing(current_cex):
         return do_cex_processing(cex=current_cex, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations)

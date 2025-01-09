@@ -9,11 +9,13 @@ import uuid
 
 from datetime import datetime
 
+import numpy as np
 from aalpy import bisimilar
 from aalpy.utils import load_automaton_from_file
 from pebble import ProcessPool
 
 import active_pmsatlearn
+from active_pmsatlearn.defs import EqOracleTermination
 from active_pmsatlearn.log import set_current_process_name
 from active_pmsatlearn.utils import *
 from evaluation.generate_automata import *
@@ -249,6 +251,81 @@ def print_results_info(results: list[dict]):
         print("\t\t", f"occurred in {len(unique_algorithms)} unique algorithms: {unique_algorithms}")
 
 
+def calculate_accuracy(true_outputs, learned_outputs):
+    total_steps = len(true_outputs)
+
+    # strong: Check if the entire trace matches
+    strong = 1 if true_outputs == learned_outputs else 0
+
+    # medium: Number of steps that fit from the start until the first divergence
+    medium_fit_steps = 0
+    for t, l in zip(true_outputs, learned_outputs):
+        if t == l:
+            medium_fit_steps += 1
+        else:
+            break
+    medium = medium_fit_steps / total_steps
+
+    # weak: Number of matching steps divided by total steps
+    weak_fit_steps = sum(1 for t, l in zip(true_outputs, learned_outputs) if t == l)
+    weak = weak_fit_steps / total_steps
+
+    return strong, medium, weak
+
+
+@timeit("Calculating statistics")
+def calculate_statistics(original_automaton: MooreMachine, learned_automaton: MooreMachine):
+    input_alphabet = original_automaton.get_input_alphabet()
+    extension_length = len(original_automaton.states)
+    input_combinations = list(itertools.product(input_alphabet, repeat=extension_length))
+
+    num_completely_correct_traces = 0
+    num_outputs = 0
+    num_correct_outputs = 0
+    strong_accs = []
+    medium_accs = []
+    weak_accs = []
+    precision_per_trace = []
+
+    if learned_automaton is not None:
+        for input_combination in input_combinations:
+            orig_outputs = original_automaton.execute_sequence(original_automaton.initial_state, input_combination)
+            learned_outputs = learned_automaton.execute_sequence(learned_automaton.initial_state, input_combination)
+
+            if orig_outputs == learned_outputs:
+                num_completely_correct_traces += 1
+
+            num_outputs += len(orig_outputs)
+            num_correct_outputs_trace = sum((a == b) for a, b in zip(orig_outputs, learned_outputs))
+            num_correct_outputs += num_correct_outputs_trace
+
+            precision_per_trace.append(num_correct_outputs_trace / len(orig_outputs))
+
+            strong_acc, medium_acc, weak_acc = calculate_accuracy(orig_outputs, learned_outputs)
+            strong_accs.append(strong_acc)
+            medium_accs.append(medium_acc)
+            weak_accs.append(weak_acc)
+
+    return {
+        "Number of performed traces": len(input_combinations),
+        "Number of correct traces": num_completely_correct_traces,
+        "Length of each trace": len(input_combinations[0]),
+        "Number of outputs": num_outputs,
+        "Number of correct outputs": num_correct_outputs,
+        "Precision (all steps)": num_correct_outputs / num_outputs,
+        "Precision (traces)": num_completely_correct_traces / len(input_combinations),
+        "Precision per trace (mean)": np.mean(precision_per_trace or [0]),
+        "Precision per trace (median)": np.median(precision_per_trace or [0]),
+        # "Recall": num_correct_outputs / num_outputs ??
+        "Strong accuracy (mean)": np.mean(strong_accs or [0]),
+        "Strong accuracy (median)": np.median(strong_accs or [0]),
+        "Medium accuracy (mean)": np.mean(medium_accs or [0]),
+        "Medium accuracy (median)": np.median(medium_accs or [0]),
+        "Weak accuracy (mean)": np.mean(weak_accs or [0]),
+        "Weak accuracy (median)": np.median(weak_accs or [0]),
+    }
+
+
 def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: str, oracle_type: str, results_dir: str,
                     max_num_steps: int | None = None, glitch_percent: float = 0.0, print_level: int = 0) -> dict[str, Any]:
     automaton = load_automaton_from_file(automaton_file, automaton_type)
@@ -266,7 +343,10 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
                 f"({automaton_file})")
     alg_kwargs = dict(alphabet=automaton.get_input_alphabet(), sul=sul, print_level=print_level)
     if oracle is not None:
-        alg_kwargs['eq_oracle'] = oracle
+        if algorithm_name.startswith("NAPMSL"):
+            alg_kwargs['termination_mode'] = EqOracleTermination(oracle)
+        else:
+            alg_kwargs['eq_oracle'] = oracle
 
     try:
         learned_model, info = algorithm(**alg_kwargs)
@@ -292,6 +372,9 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     info["oracle"] = oracle_type
     info["learned_correctly"] = learned_correctly
     info["bisimilar"] = bisimilar(sul.automaton, learned_model) if learned_model is not None else False
+    stats = calculate_statistics(sul.automaton, learned_model)
+    for key, val in stats.items():
+        info[key] = float(val)
 
     info["max_num_steps"] = max_num_steps
     info["glitch_percent"] = glitch_percent
@@ -302,6 +385,8 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     info["original_automaton_num_inputs"] = len(automaton.get_input_alphabet())
     info["original_automaton_num_outputs"] = len(set(s.output for s in automaton.states))
 
+    # TODO also write learned model etc
+    #  probably: create folder for this learning, like in generated_data
     write_single_json_result(results_dir, automaton_file, info)
 
     logger.info(f"Finished {algorithm_name} with keywords {algorithm.unique_keywords} and oracle '{oracle_type}'")

@@ -8,9 +8,10 @@ from aalpy.SULs import MooreSUL
 from aalpy.utils import load_automaton_from_file
 from aalpy.utils import bisimilar
 
+from active_pmsatlearn.defs import EqOracleTermination
 from active_pmsatlearn.learnalgo_nomat import run_activePmSATLearn
 from evaluation.defs import oracles
-from evaluation.learn_automata import setup_sul
+from evaluation.learn_automata import setup_sul, calculate_statistics
 
 
 def get_sul_from_file(file: str, glitch_percent: float = 0):
@@ -25,7 +26,7 @@ def get_oracle(oracle_name: str, sul):
 def main():
     args = sys.argv[1:]
     if len(args) not in (1, 2):
-        print("USAGE: python run_apmsl_on_file_or_dir.py FILE_OR_DIR [GLITCH_PERCENT]")
+        print("USAGE: python run_apmsl_on_file_or_dir.py FILE_OR_DIR [GLITCH_PERCENT] [LEARNING_ALG_KWARGS]")
         exit(1)
 
     file_or_dir = args[0]
@@ -57,13 +58,15 @@ def main():
             extension_length=3,
             heuristic_function='intermediary',
             pm_strategy="rc2",
-            timeout=100,
+            timeout=200,
             print_level=2,
             return_data=True,
-            input_completeness_processing=False,
-            glitch_processing=False,
-            random_state_exploration=True,
-            discard_glitched_traces=False
+            window_cex_processing=False,
+            termination_mode=EqOracleTermination(get_oracle('Random', sul))
+            # input_completeness_preprocessing=False,
+            # glitch_processing=False,
+            # random_state_exploration=True,
+            # discard_glitched_traces=False
         )
 
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -82,6 +85,13 @@ def main():
             else:
                 print(f"Bisimilar: {b is None}")
 
+            print("Calculate statistics...")
+            stats = calculate_statistics(sul.automaton, learned_model)
+            max_len = len(max(stats.keys()))
+            for k, v in stats.items():
+                print(f"{k: <{max_len}}: {v}")
+
+            print("Saving models...")
             learned_model.save("LearnedModel")
             sul.automaton.save("OriginalModel")
         else:
