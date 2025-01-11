@@ -5,6 +5,7 @@ from typing import TypeAlias, Any, Callable
 from aalpy import MooreMachine, MealyMachine, Oracle
 from aalpy.SULs import MooreSUL, MealySUL
 
+from active_pmsatlearn.oracles import RobustEqOracleMixin
 from pmsatlearn.learnalgo import Output, Input
 
 Trace: TypeAlias = tuple[Output | tuple[Input, Output]]
@@ -59,7 +60,7 @@ class ImprovementTermination(TerminationMode, ABC):
 @dataclass
 class EqOracleTermination(TerminationMode):
     """ Terminates once the eq_oracle does not find a counterexample to the given hypothesis. """
-    eq_oracle: Oracle
+    eq_oracle: RobustEqOracleMixin
 
 
 @dataclass

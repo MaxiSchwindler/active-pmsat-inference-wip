@@ -372,7 +372,7 @@ def run_activePmSATLearn(
     if return_data:
         total_time = round(time.time() - start_time, 2)
 
-        active_info = build_info_dict(hyp, sul, learning_rounds, total_time,
+        active_info = build_info_dict(hyp, sul, learning_rounds, total_time, termination_mode,
                                       pmsat_info, detailed_learning_info, hyp_stoc, timed_out)
         if print_level > 1:
             print_learning_info(active_info)
@@ -694,16 +694,16 @@ def do_replay_glitches(hyps: HypothesesWindow, traces_used_to_learn: list[Trace]
     return new_traces
 
 
-def build_info_dict(hyp, sul, learning_rounds, total_time,
+def build_info_dict(hyp, sul, learning_rounds, total_time, termination_mode,
                     last_pmsat_info, detailed_learning_info, hyp_stoc, timed_out):
     active_info = {
         'learning_rounds': learning_rounds,
         'learned_automaton_size': hyp.size if hyp is not None else None,
         'queries_learning': sul.num_queries,
         'steps_learning': sul.num_steps,
-        'queries_eq_oracle': -1,
-        'steps_eq_oracle': -1,
-        'eq_oracle_time': -1,
+        'queries_eq_oracle': termination_mode.eq_oracle.num_queries if isinstance(termination_mode, EqOracleTermination) else None,
+        'steps_eq_oracle': termination_mode.eq_oracle.num_queries if isinstance(termination_mode, EqOracleTermination) else None,
+        'eq_oracle_time': termination_mode.eq_oracle.eq_query_time if isinstance(termination_mode, EqOracleTermination) else None,
         'total_time': total_time,
         'cache_saved': sul.num_cached_queries,
         'last_pmsat_info': last_pmsat_info,

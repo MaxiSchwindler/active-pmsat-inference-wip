@@ -1,4 +1,6 @@
 import math
+import time
+from functools import wraps
 
 NONE = 0
 INFO = 1
@@ -26,6 +28,30 @@ class RobustEqOracleMixin:
     def __init__(self, perform_n_times: int = 20, validity_threshold: float = 0.51):
         self.perform_n_times = perform_n_times
         self.threshold = math.ceil(validity_threshold * perform_n_times)
+        self.eq_query_time = 0
+
+    def find_cex(self, hypothesis, return_output=True):
+        eq_query_start = time.time()
+        retval = super().find_cex(hypothesis, return_output=return_output)
+        self.eq_query_time += time.time() - eq_query_start
+        return retval
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        if hasattr(cls, 'find_cex'):
+            original_find_cex = getattr(cls, 'find_cex')
+
+            @wraps(original_find_cex)
+            def timed_find_cex(self, *args, **kwargs):
+                eq_query_start = time.time()
+                result = original_find_cex(self, *args, **kwargs)
+                self.eq_query_time += time.time() - eq_query_start
+
+                return result
+
+            # Replace the method in the subclass with the timed version
+            setattr(cls, 'find_cex', timed_find_cex)
 
     def validate_counterexample(self, inputs, outputs_sul, outputs_hyp):
         log(f"{type(self).__name__} found a possible counterexample. "
