@@ -1,3 +1,4 @@
+import builtins
 import os
 import itertools
 import random
@@ -202,3 +203,7 @@ def dict_product(options) -> Iterable[dict]:
      {'character': 'b', 'number': 2}]
     """
     return (dict(zip(options.keys(), x)) for x in itertools.product(*options.values()))
+
+
+def is_builtin_type(obj: Any) -> bool:
+    return type(obj).__name__ in dir(builtins)

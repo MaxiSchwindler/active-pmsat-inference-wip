@@ -23,8 +23,10 @@ def run_activePmSATLearn(
     alphabet: list,
     sul: SupportedSUL,
     automaton_type: Literal["mealy", "moore"],
-    extension_length: int = 2,
+
+    # algorithm-specific args
     sliding_window_size: int = 5,
+    extension_length: int = 2,
     heuristic_function: str | HeuristicFunction = "intermediary",
     timeout: float | None = None,
 
@@ -45,9 +47,9 @@ def run_activePmSATLearn(
     random_state_exploration: bool = False,
 
     # postprocessing, only relevant if termination_mode = EqOracleTermination(...)
-    cex_processing: bool = False,
-    discard_glitched_traces: bool = False,
-    add_cex_as_hard_clauses: bool = False,
+    cex_processing: bool = True,
+    discard_glitched_traces: bool = True,
+    add_cex_as_hard_clauses: bool = True,
 
     # return/print/debug
     return_data: bool = True,
@@ -99,8 +101,7 @@ def run_activePmSATLearn(
     #####################################
     #   INPUT VERIFICATION/DEFAULTS     #
     #####################################
-    print(f"{timeout=}")
-    assert sliding_window_size >= 1, "Sliding window must have a size of at least 3"
+    assert sliding_window_size >= 1, "Sliding window must have a size of at least 1"
 
     if input_completeness_preprocessing is True:
         input_completeness_preprocessing = INPUT_COMPLETENESS_PROCESSING_DEFAULT
@@ -406,6 +407,9 @@ def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: 
         if pmsat_info["timed_out"]:
             break  # the first time learning times out, we end learning the sliding window (everything afterwards will also time out)
         elif not pmsat_info["is_sat"]:
+            assert "glitchless_data" in common_pmsatlearn_kwargs, ("Without specifying 'glitchless_data', we should "
+                                                                   "never get UNSAT!")
+            assert len(common_pmsatlearn_kwargs["glitchless_data"]) > 0
             continue  # TODO: handle unsat! -> learn again without hard clauses?
 
         pmsat_info["percent_glitches"] = get_glitch_percentage(pmsat_info, traces)
@@ -572,7 +576,9 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
                 return Continue(**continue_kwargs)
 
         case EqOracleTermination(eq_oracle):
-            assert False, "Should not come here with"
+            # if the eq oracle had no counterexample, we would have already returned
+            assert 'cex' in continue_kwargs.get('additional_data', {})
+            return Continue(**continue_kwargs)
 
         case _:
             raise NotImplementedError(f"Termination mode {type(termination_mode).__name__} not implemented!")

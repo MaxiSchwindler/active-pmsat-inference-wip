@@ -20,7 +20,7 @@ from active_pmsatlearn.log import set_current_process_name
 from active_pmsatlearn.utils import *
 from evaluation.generate_automata import *
 from evaluation.utils import *
-from evaluation.defs import algorithms, oracles, RobustPerfectMooreOracle
+from evaluation.defs import *
 
 logger = active_pmsatlearn.log.get_logger(__file__)
 
@@ -312,7 +312,7 @@ def calculate_statistics(original_automaton: MooreMachine, learned_automaton: Mo
         "Length of each trace": len(input_combinations[0]),
         "Number of outputs": num_outputs,
         "Number of correct outputs": num_correct_outputs,
-        "Precision (all steps)": num_correct_outputs / num_outputs,
+        "Precision (all steps)": (num_correct_outputs / num_outputs) if num_outputs > 0 else 0,
         "Precision (traces)": num_completely_correct_traces / len(input_combinations),
         "Precision per trace (mean)": np.mean(precision_per_trace or [0]),
         "Precision per trace (median)": np.median(precision_per_trace or [0]),
@@ -331,7 +331,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     automaton = load_automaton_from_file(automaton_file, automaton_type)
     sul = setup_sul(automaton, max_num_steps, glitch_percent)
     oracle = oracles[oracle_type](sul)
-    algorithm = algorithms[algorithm_name]
+    algorithm: AlgorithmWrapper = eval(AlgorithmWrapper.preprocess_algorithm_call(algorithm_name))
     start_time = time.time()
     output_alphabet = set(s.output for s in automaton.states)
 
@@ -343,13 +343,13 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
                 f"({automaton_file})")
     alg_kwargs = dict(alphabet=automaton.get_input_alphabet(), sul=sul, print_level=print_level)
     if oracle is not None:
-        if algorithm_name.startswith("NAPMSL"):
+        if algorithm_name.startswith("APMSL"):
             alg_kwargs['termination_mode'] = EqOracleTermination(oracle)
         else:
             alg_kwargs['eq_oracle'] = oracle
 
     try:
-        learned_model, info = algorithm(**alg_kwargs)
+        learned_model, info = algorithm.run(**alg_kwargs)
         info["max_steps_reached"] = False
     except MaxStepsReached:
         learned_model = None
@@ -384,6 +384,8 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     info["original_automaton_size"] = automaton.size
     info["original_automaton_num_inputs"] = len(automaton.get_input_alphabet())
     info["original_automaton_num_outputs"] = len(set(s.output for s in automaton.states))
+
+    info["algorithm_kwargs"] = {k: v if is_builtin_type(v) else str(v) for k, v in (algorithm.kwargs | alg_kwargs).items()}
 
     # TODO also write learned model etc
     #  probably: create folder for this learning, like in generated_data
@@ -433,8 +435,10 @@ def main():
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(description='Learn automata with different algorithms & oracles. '
                                                      'You can also run interactively.')
-        parser.add_argument('-a', '--algorithms', type=str, nargs="+", choices=algorithms.keys(), required=True,
+        parser.add_argument('-a', '--algorithms', type=AlgorithmWrapper.validate_type, nargs="+", required=True,
                             help='Learning algorithms to learn automata with')
+        parser.add_argument('-e', '--explain', action=AlgorithmWrapper.ExplainAlgorithmAction,
+                            help="Show help message for only specified parameters and exit")
         parser.add_argument('-o', '--oracles', type=str, nargs="+", choices=oracles.keys(), required=True,
                             help='Equality oracles used during learning')
         parser.add_argument('--learn_num_times', type=int, default=5,
@@ -474,6 +478,7 @@ def main():
         print_level = args.print_level
 
     else:
+        raise NotImplementedError("Interactive input is currently unsupported.")
         selected_algorithms = get_user_choices("Select algorithms to learn with", algorithms.keys())
         selected_oracles = get_user_choices("Select oracles to learn with", oracles.keys())
         learn_num_times = int(input("Enter number of times to learn the same automaton: "))
