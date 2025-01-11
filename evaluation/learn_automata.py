@@ -13,16 +13,18 @@ import numpy as np
 from aalpy import bisimilar
 from aalpy.utils import load_automaton_from_file
 from pebble import ProcessPool
+from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 import active_pmsatlearn
 from active_pmsatlearn.defs import EqOracleTermination
-from active_pmsatlearn.log import set_current_process_name
+from active_pmsatlearn.log import set_current_process_name, std_out_err_redirect_tqdm, get_logger
 from active_pmsatlearn.utils import *
 from evaluation.generate_automata import *
 from evaluation.utils import *
 from evaluation.defs import *
 
-logger = active_pmsatlearn.log.get_logger(__file__)
+logger = get_logger(__file__)
 
 
 def get_all_automata_files_from_dir(directory: str):
@@ -424,7 +426,14 @@ def learn_automata(automata_type: str, automata_files: list[str],
         atexit.register(stop_remaining_jobs, pool)
 
         futures = pool.map(learn_automaton_wrapper, all_combinations_n_times)
-        results = [f for f in futures.result()]
+
+        results = []
+        with logging_redirect_tqdm():
+            with std_out_err_redirect_tqdm() as orig_stdout:
+                with tqdm(total=len(all_combinations_n_times), file=orig_stdout, dynamic_ncols=True) as pbar:
+                    for f in futures.result():
+                        results.append(f)
+                        pbar.update(1)
     else:
         # dont use multiple processes (debugging)
         results = [learn_automaton_wrapper(args) for args in all_combinations_n_times]

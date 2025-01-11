@@ -1,11 +1,16 @@
 import logging
-import sys
 import multiprocessing
 import os
+import contextlib
+import sys
+
+from tqdm import tqdm
+from tqdm.contrib import DummyTqdmFile
+
 
 from pebble import concurrent
 
-MAX_LEN_PROCESS_NAME = 24
+MAX_LEN_PROCESS_NAME = 32
 DEBUG_EXT = 5
 
 LOG_COLORS = {
@@ -104,6 +109,31 @@ def _test_pebble():
     set_current_process_name("test_pebble")
     logger = get_logger("test_pebble")
     logger.debug("debug message from pebble process")
+
+
+@contextlib.contextmanager
+def std_out_err_redirect_tqdm():
+    orig_out_err = sys.stdout, sys.stderr
+    try:
+        sys.stdout, sys.stderr = map(DummyTqdmFile, orig_out_err)
+        yield orig_out_err[0]
+    # Relay exceptions
+    except Exception as exc:
+        raise exc
+    # Always restore sys.stdout/err if necessary
+    finally:
+        sys.stdout, sys.stderr = orig_out_err
+
+
+""" 
+Usage:
+with std_out_err_redirect_tqdm() as orig_stdout:
+    # tqdm needs the original stdout
+    # and dynamic_ncols=True to autodetect console width
+    for i in tqdm(range(12), file=orig_stdout, dynamic_ncols=True):
+        sleep(.5)
+        some_fun(i)
+"""
 
 
 if __name__ == "__main__":
