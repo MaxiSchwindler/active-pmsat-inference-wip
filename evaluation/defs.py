@@ -234,7 +234,7 @@ class APMSL(MooreLearningAlgorithm):
 
     default_parameters = dict(
         pm_strategy='rc2',
-        timeout=10*MINUTES,
+        timeout=20*MINUTES,
     )
 
     positional_arguments = (

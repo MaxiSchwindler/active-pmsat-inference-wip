@@ -169,6 +169,7 @@ def print_results_info(results: list[dict]):
 
     algorithms = list(set([entry["algorithm_name"] for entry in results]))
     valid_results = [entry for entry in results if "exception" not in entry]
+    results_with_model = [entry for entry in results if entry["learned_automaton_size"] is not None ]
 
     sep()
     print("RESULTS:")
@@ -182,13 +183,34 @@ def print_results_info(results: list[dict]):
     num_learned = sum(r['learned_correctly'] for r in results)
     num_timed_out = sum(r['timed_out'] for r in valid_results)
     num_bisimilar = sum(r['bisimilar'] for r in results)
+    num_returned_model = sum(r['learned_automaton_size'] is not None for r in valid_results)
 
     print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
+    print(f"Returned models (did not return None): {num_returned_model} of {num_valid} ({num_returned_model / num_valid * 100:.2f}%)")
     if num_valid > 0:
         print(f"Learned correctly: {num_learned} of {num_valid} ({num_learned / num_valid * 100:.2f}%)")
         print(f"Bisimilar: {num_bisimilar} of {num_valid} ({num_bisimilar / num_valid * 100:.2f}%)")
     if num_timed_out:
+        num_timed_out_but_correct = sum(r['timed_out'] and r['learned_correctly'] for r in valid_results)
+        num_timed_out_but_bisimilar = sum(r['timed_out'] and r['bisimilar'] for r in valid_results)
         print(f"Timed out: {num_timed_out} of {num_results} ({num_timed_out / num_results * 100:.2f}%)")
+        print(f"  - Nevertheless correct: {num_timed_out_but_correct}")
+        print(f"  - Nevertheless bisimilar: {num_timed_out_but_bisimilar}")
+    sep()
+
+    print("Statistics:")
+    for stat in ["Precision (all steps)", "Precision (traces)",
+                 "Precision per trace (mean)", "Precision per trace (median)",
+                 "Strong accuracy (mean)","Strong accuracy (median)",
+                 "Medium accuracy (mean)","Medium accuracy (median)",
+                 "Weak accuracy (mean)","Weak accuracy (median)"]:
+        print(f"  {stat}: ")
+        for stat_method in (np.mean, np.median, np.min, np.max):
+            val_all = stat_method([r[stat] for r in results])
+            val_corr = stat_method([r[stat] for r in (res for res in valid_results if res["learned_correctly"])])
+            val_timed = stat_method([r[stat] for r in (res for res in valid_results if res["timed_out"])])
+            val_not_timed = stat_method([r[stat] for r in (res for res in valid_results if not res["timed_out"])])
+            print(f"    {stat_method.__name__:6}: {val_all:.2f} (with TO: {val_timed:.2f} | no TO: {val_not_timed:.2f})")
     sep()
 
     num_automata = len(set(r['original_automaton'] for r in results))
@@ -278,7 +300,7 @@ def calculate_accuracy(true_outputs, learned_outputs):
 @timeit("Calculating statistics")
 def calculate_statistics(original_automaton: MooreMachine, learned_automaton: MooreMachine):
     input_alphabet = original_automaton.get_input_alphabet()
-    extension_length = len(original_automaton.states)
+    extension_length = len(original_automaton.states) + 1
     input_combinations = list(itertools.product(input_alphabet, repeat=extension_length))
 
     num_completely_correct_traces = 0
@@ -377,6 +399,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     stats = calculate_statistics(sul.automaton, learned_model)
     for key, val in stats.items():
         info[key] = float(val)
+    info["learned_model"] = str(learned_model) if learned_model is not None else ""
 
     info["max_num_steps"] = max_num_steps
     info["glitch_percent"] = glitch_percent
