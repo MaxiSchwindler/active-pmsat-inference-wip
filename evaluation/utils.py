@@ -1,3 +1,4 @@
+import argparse
 import builtins
 import os
 import itertools
@@ -207,3 +208,43 @@ def dict_product(options) -> Iterable[dict]:
 
 def is_builtin_type(obj: Any) -> bool:
     return type(obj).__name__ in dir(builtins)
+
+
+def get_args_from_input(parser):
+    args_dict = {}
+    for action in parser._actions:
+        if action.dest in ('help', 'explain'):
+            continue
+
+        arg_name = action.dest
+        default_value = action.default
+        arg_type = action.type if action.type else str
+        required = action.required
+        nargs = action.nargs == '+'
+
+        prompt = f"Enter value{'s' if nargs else ''} for {arg_name}{' (space-seperated)' if nargs else ''}"
+        if default_value is not None:
+            prompt += f" (default: {default_value})"
+        if required:
+            prompt += " [required]"
+
+        prompt += ": "
+
+        while True:
+            user_input = input(prompt)
+
+            # Use default if input is empty
+            if not user_input.strip() and not required:
+                args_dict[arg_name] = default_value
+                break
+
+            try:
+                if nargs:
+                    args_dict[arg_name] = [arg_type(value) for value in user_input.split()]
+                else:
+                    args_dict[arg_name] = arg_type(user_input)
+                break
+            except Exception as e:
+                print(f"Invalid value for {arg_name}: {e}")
+
+    return argparse.Namespace(**args_dict)

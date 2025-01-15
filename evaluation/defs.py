@@ -146,7 +146,7 @@ class AlgorithmWrapper:
             return cls.preprocess_algorithm_call(string)
             # return cls.ArgparseWrapper(cls.preprocess_algorithm_call(string))
         if should_raise:
-            raise argparse.ArgumentTypeError(f"{string} is not a valid algorithm. "
+            raise argparse.ArgumentTypeError(f"'{string}' is not a valid algorithm. "
                                              f"Choose from {cls.all_implemented_algorithms()}. "
                                              + (f"You can add algorithm parameters in parentheses." if add_help else ""))
         return False

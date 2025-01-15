@@ -110,7 +110,11 @@ def result_json_files_to_csv(results_dir):
             continue
         file_path = os.path.join(results_dir, file)
         with open(file_path, 'r') as f:
-            result = json.load(f)
+            try:
+                result = json.load(f)
+            except Exception as e:
+                print(f"Error while loading file {file_path}: {e}")
+                raise e
             results.append(result)
     results_file = os.path.join(results_dir, "all_results.csv")
     logger.info(f"Writing all results to {results_file}...")
@@ -464,89 +468,52 @@ def learn_automata(automata_type: str, automata_files: list[str],
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Learn automata with different algorithms & oracles. '
+                                                 'You can also run interactively.')
+    parser.add_argument('-a', '--algorithms', type=AlgorithmWrapper.validate_type, nargs="+", required=True,
+                        help='Learning algorithms to learn automata with')
+    parser.add_argument('-e', '--explain', action=AlgorithmWrapper.ExplainAlgorithmAction,
+                        help="Show help message for only specified parameters and exit")
+    parser.add_argument('-o', '--oracles', type=str, nargs="+", choices=oracles.keys(), required=True,
+                        help='Equality oracles used during learning')
+    parser.add_argument('--learn_num_times', type=int, default=5,
+                        help='Number of times to learn the same automaton')
+    parser.add_argument('--max_num_steps', type=int, default=float('inf'),
+                        help='Maximum number of steps taken in the SUL during learning before aborting')
+    parser.add_argument('--glitch_percent', type=float, default=0.0,
+                        help='How many percent of steps in the SUL glitch (currently, only fault_mode="discard" is supported)')
+    parser.add_argument('--learn_all_automata_from_dir', type=str,
+                        help='Learn all automata from a directory. If this directory is specified, '
+                             'all arguments concerning automata generation except -t are ignored. '
+                             'You have to ensure yourself that all of these automata are instances of the '
+                             'automaton type given with -t.')
+    add_automata_generation_arguments(parser)
+    parser.add_argument('--reuse', type=bool, default=True,
+                        help="Whether to reuse existing automata or to force generation of new ones")
+    parser.add_argument('-rd', '--results_dir', type=str, default="learning_results",
+                        help='Directory to store results in.')
+    parser.add_argument('-pl', '--print_level', type=int, default=0,
+                        help="Print level for all algorithms. Usually ranges from 0 (nothing) to 3 (everything).")
+
     if len(sys.argv) > 1:
-        parser = argparse.ArgumentParser(description='Learn automata with different algorithms & oracles. '
-                                                     'You can also run interactively.')
-        parser.add_argument('-a', '--algorithms', type=AlgorithmWrapper.validate_type, nargs="+", required=True,
-                            help='Learning algorithms to learn automata with')
-        parser.add_argument('-e', '--explain', action=AlgorithmWrapper.ExplainAlgorithmAction,
-                            help="Show help message for only specified parameters and exit")
-        parser.add_argument('-o', '--oracles', type=str, nargs="+", choices=oracles.keys(), required=True,
-                            help='Equality oracles used during learning')
-        parser.add_argument('--learn_num_times', type=int, default=5,
-                            help='Number of times to learn the same automaton')
-        parser.add_argument('--max_num_steps', type=int, default=None,
-                            help='Maximum number of steps taken in the SUL during learning before aborting')
-        parser.add_argument('--glitch_percent', type=float, default=0.0,
-                            help='How many percent of steps in the SUL glitch (currently, only fault_mode="discard" is supported)')
-        parser.add_argument('--learn_all_automata_from_dir', type=str,
-                            help='Learn all automata from a directory. If this directory is specified, '
-                                 'all arguments concerning automata generation except -t are ignored. '
-                                 'You have to ensure yourself that all of these automata are instances of the '
-                                 'automaton type given with -t.')
-        add_automata_generation_arguments(parser)
-        parser.add_argument('--reuse', type=bool, default=True,
-                            help="Whether to reuse existing automata or to force generation of new ones")
-        parser.add_argument('-rd', '--results_dir', type=str, default="learning_results",
-                            help='Directory to store results in.')
-        parser.add_argument('-pl', '--print_level', type=int, default=0,
-                            help="Print level for all algorithms. Usually ranges from 0 (nothing) to 3 (everything).")
         args = parser.parse_args()
-
-        selected_algorithms = args.algorithms
-        selected_oracles = args.oracles
-        learn_num_times = args.learn_num_times
-        max_num_steps = args.max_num_steps
-        glitch_percent = args.glitch_percent
-        learn_from_dir = args.learn_all_automata_from_dir
-        num_automata_per_combination = args.num_automata_per_combination
-        automata_type = args.type
-        num_states = args.num_states
-        num_inputs = args.num_inputs
-        num_outputs = args.num_outputs
-        generated_automata_dir = args.generated_automata_dir
-        reuse_existing_automata = args.reuse
-        results_dir = new_file(args.results_dir)
-        print_level = args.print_level
-
     else:
-        raise NotImplementedError("Interactive input is currently unsupported.")
-        selected_algorithms = get_user_choices("Select algorithms to learn with", algorithms.keys())
-        selected_oracles = get_user_choices("Select oracles to learn with", oracles.keys())
-        learn_num_times = int(input("Enter number of times to learn the same automaton: "))
-        max_num_steps = input("Enter maximum number of steps to take in the SUL before aborting: ")
-        max_num_steps = int(max_num_steps) if max_num_steps else None
-        glitch_percent = input("Enter glitch percent (default: 0.0)")
-        glitch_percent = float(glitch_percent) if glitch_percent else 0.0
+        print("No arguments provided. Switching to interactive mode (experimental).")
+        args = get_args_from_input(parser)
 
-        automata_type = input("Enter type of automata to generate: ")
-        if automata_type not in SUPPORTED_AUTOMATA_TYPES:
-            raise TypeError(f"Unsupported type of automata: '{automata_type}'")
-
-        learn_from_dir = bool(input("Learn all automata from a directory? (y/n) (default: no): ") in ("y", "Y", "yes"))
-        if learn_from_dir:
-            learn_from_dir = input(f"Enter directory (all contained automata must be {automata_type} automata): ")
-        else:
-            num_automata_per_combination = int(input("Enter number of automata to generate/learn (default: 5): ") or 5)
-            num_states = parse_range(input("Enter number of states per automaton: "))
-            num_inputs = parse_range(input("Enter number of inputs per automaton: "))
-            num_outputs = parse_range(input("Enter number of outputs per automaton: "))
-            generated_automata_dir = input("Enter directory to store generated automata in: ") or "generated_automata"
-            reuse_existing_automata = input("Reuse existing automata? (y/n) (default: yes): ") in ("y", "Y", "yes", "")
-
-        results_dir = new_file(input("Enter path to results directory: ") or "learning_results")
-        print_level = int(input("Enter the print level for the algorithms (0 - 3) (default: 0): ") or 0)
-
-    if learn_from_dir:
-        files_to_learn = get_all_automata_files_from_dir(learn_from_dir)
+    if args.learn_all_automata_from_dir:
+        files_to_learn = get_all_automata_files_from_dir(args.learn_all_automata_from_dir)
     else:
-        files_to_learn = get_generated_automata_files_to_learn(num_automata_per_combination, automata_type,
-                                                               num_states, num_inputs, num_outputs,
-                                                               generated_automata_dir, reuse_existing_automata)
+        files_to_learn = get_generated_automata_files_to_learn(args.num_automata_per_combination, args.type,
+                                                               args.num_states, args.num_inputs, args.num_outputs,
+                                                               args.generated_automata_dir, args.reuse)
+
+    max_num_steps = args.max_num_steps if args.max_num_steps != float('inf') else None
+    results_dir = new_file(args.results_dir)
 
     set_current_process_name(os.path.basename(__file__))
-    learn_automata(automata_type, files_to_learn, selected_algorithms, selected_oracles, results_dir,
-                   learn_num_times, max_num_steps, glitch_percent, print_level)
+    learn_automata(args.type, files_to_learn, args.algorithms, args.oracles, results_dir,
+                   args.learn_num_times, max_num_steps, args.glitch_percent, args.print_level)
 
 if __name__ == '__main__':
     main()
