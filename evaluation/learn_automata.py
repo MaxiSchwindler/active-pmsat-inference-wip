@@ -368,7 +368,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
 
     logger.info(f"Running {algorithm_name} with keywords {algorithm.unique_keywords} and oracle '{oracle_type}' on an "
                 f"automaton with {automaton.size} states, {len(automaton.get_input_alphabet())} inputs, {len(output_alphabet)} outputs. "
-                f"({automaton_file})")
+                f"({automaton_file}). SUL has {glitch_percent}% glitches.")
     alg_kwargs = dict(alphabet=automaton.get_input_alphabet(), sul=sul, print_level=print_level)
     if oracle is not None:
         if algorithm_name.startswith("APMSL"):
@@ -432,15 +432,18 @@ def learn_automaton_wrapper(args: tuple):
 def learn_automata(automata_type: str, automata_files: list[str],
                    algorithm_names: Sequence[str], oracle_types: Sequence[str], results_dir: str,
                    learn_num_times: int = 5, max_num_steps: int | None = None,
-                   glitch_percent: float = 0.0, print_level: int = 0):
+                   glitch_percents: list[float] = None, print_level: int = 0):
+    if not glitch_percents:
+        glitch_percents = [0.0]
+
     all_combinations = [
         (automata_type, automata_file, algorithm_name, oracle_type, results_dir, max_num_steps, glitch_percent, print_level)
-        for (automata_file, algorithm_name, oracle_type)
-        in itertools.product(automata_files, algorithm_names, oracle_types)
+        for (automata_file, algorithm_name, oracle_type, glitch_percent)
+        in itertools.product(automata_files, algorithm_names, oracle_types, glitch_percents)
     ]
 
     logger.info(f"Learning automata in {len(all_combinations)} unique constellations "
-                f"(algorithms: {algorithm_names} | oracles: {oracle_types} | and {len(automata_files)} files). "
+                f"(algorithms: {algorithm_names} | oracles: {oracle_types} | {len(automata_files)} files | {len(glitch_percents)} unique glitch percents). "
                 f"Each constellation is learned {learn_num_times} times.")
 
     all_combinations_n_times = [c for c in all_combinations for _ in range(learn_num_times)]
@@ -480,8 +483,9 @@ def main():
                         help='Number of times to learn the same automaton')
     parser.add_argument('--max_num_steps', type=int, default=float('inf'),
                         help='Maximum number of steps taken in the SUL during learning before aborting')
-    parser.add_argument('--glitch_percent', type=float, default=0.0,
-                        help='How many percent of steps in the SUL glitch (currently, only fault_mode="discard" is supported)')
+    parser.add_argument('--glitch_percent', type=float, nargs="+",
+                        help='How many percent of steps in the SUL glitch (currently, only fault_mode="send_random_input" is supported). '
+                             'You can specify multiple glitch percent at once.')
     parser.add_argument('--learn_all_automata_from_dir', type=str,
                         help='Learn all automata from a directory. If this directory is specified, '
                              'all arguments concerning automata generation except -t are ignored. '

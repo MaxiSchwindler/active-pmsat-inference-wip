@@ -15,6 +15,12 @@ from contextlib import contextmanager
 
 
 def parse_range(value: str | int | range) -> range:
+    """
+    Parse an integer-range from a string or a single int.
+    Format is "<start>-<stop>" or "<start>-<stop>-<step>".
+    Note that other than a standard-python-range, <stop> is inclusive.
+    If a single int is given, a range containing only this int is returned.
+    """
     if isinstance(value, str):
         parts = value.split('-')
         if len(parts) == 3:
