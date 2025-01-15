@@ -207,9 +207,9 @@ def print_results_info(results: list[dict]):
         print(f"  {stat}: ")
         for stat_method in (np.mean, np.median, np.min, np.max):
             val_all = stat_method([r[stat] for r in results])
-            val_corr = stat_method([r[stat] for r in (res for res in valid_results if res["learned_correctly"])])
-            val_timed = stat_method([r[stat] for r in (res for res in valid_results if res["timed_out"])])
-            val_not_timed = stat_method([r[stat] for r in (res for res in valid_results if not res["timed_out"])])
+            val_corr = stat_method([r[stat] for r in (res for res in valid_results if res["learned_correctly"])] or [0])
+            val_timed = stat_method([r[stat] for r in (res for res in valid_results if res["timed_out"])] or [0])
+            val_not_timed = stat_method([r[stat] for r in (res for res in valid_results if not res["timed_out"])] or [0])
             print(f"    {stat_method.__name__:6}: {val_all:.2f} (with TO: {val_timed:.2f} | no TO: {val_not_timed:.2f})")
     sep()
 

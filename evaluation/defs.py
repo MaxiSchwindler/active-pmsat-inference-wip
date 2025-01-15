@@ -10,8 +10,8 @@ import aalpy.learning_algs
 from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.oracles import RandomWMethodEqOracle
 
-import active_pmsatlearn.learnalgo_nomat
-from active_pmsatlearn.learnalgo_mat import run_activePmSATLearn
+import active_pmsatlearn.learnalgo
+from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
 from evaluation.utils import dict_product
 
@@ -230,11 +230,11 @@ class MooreLearningAlgorithm(AlgorithmWrapper):
 
 
 class APMSL(MooreLearningAlgorithm):
-    function = active_pmsatlearn.learnalgo_nomat.run_activePmSATLearn
+    function = run_activePmSATLearn
 
     default_parameters = dict(
         pm_strategy='rc2',
-        timeout=20*MINUTES,
+        timeout=60*MINUTES,
     )
 
     positional_arguments = (

@@ -9,7 +9,7 @@ from aalpy.utils import load_automaton_from_file
 from aalpy.utils import bisimilar
 
 from active_pmsatlearn.defs import EqOracleTermination
-from active_pmsatlearn.learnalgo_nomat import run_activePmSATLearn
+from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from evaluation.defs import oracles
 from evaluation.learn_automata import setup_sul, calculate_statistics
 
