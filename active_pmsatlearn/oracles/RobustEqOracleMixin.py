@@ -64,9 +64,14 @@ class RobustEqOracleMixin:
         assert outputs_sul[:-1] == outputs_hyp[:-1], f"Output in SUL and HYP should be identical except for last step! {outputs_sul[:-1]=} != {outputs_hyp[:-1]=}"
         assert outputs_sul[-1] != outputs_hyp[-1], f"Output in SUL and HYP should differ in the last step! {outputs_sul[-1]=} == {outputs_hyp[-1]=}"
 
+        def _query_sul(inputs_to_query):
+            if hasattr(self, 'num_steps'):
+                self.num_steps += len(inputs_to_query)
+            return self.sul.query(inputs_to_query)
+
         traces = [tuple(outputs_sul)]
         for _ in range(self.perform_n_times):
-            traces.append(tuple(self.sul.query(inputs)))
+            traces.append(tuple(_query_sul(inputs)))
             log(f"Collected trace: {traces[-1]}", level=DETAIL)
 
         majority_trace = None
@@ -107,7 +112,7 @@ class RobustEqOracleMixin:
 
         # if we return false, we also want to bring the SUL into the correct state
         log(f"Bringing the SUL into correct state...")
-        while tuple(self.sul.query(inputs)) != tuple(majority_trace):
+        while tuple(_query_sul(inputs)) != tuple(majority_trace):
             pass
 
         return False, inputs, majority_trace
