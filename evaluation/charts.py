@@ -2,8 +2,9 @@ import itertools
 import json
 import os
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Sequence, Callable
 from functools import cmp_to_key
+from typing import TypeAlias
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,6 +12,9 @@ import numpy as np
 from active_pmsatlearn.learnalgo import get_total_num_additional_traces
 
 RAISE = object()
+
+Key: TypeAlias = str | Sequence[str] | Callable[[dict], float]
+
 
 def get_algorithm_names(results: list[dict]) -> list[str]:
     """ All algorithm names in the list of results"""
@@ -36,15 +40,17 @@ def load_results(results_dir: str) -> list[dict]:
     return results
 
 
-def get_val(result: dict, key: str | Sequence[str], *, default=RAISE):
+def get_val(result: dict, key: Key, *, default=RAISE):
     """
     Get the value of @key in the given result.
     Supports nested keys, e.g. ("last_pmsat_info", "num_vars")
     """
-    assert isinstance(key, Sequence) or isinstance(key, str)
+    assert isinstance(key, Sequence) or isinstance(key, str) or callable(key)
 
     try:
-        if isinstance(key, str):
+        if callable(key):
+            return key(result)
+        elif isinstance(key, str):
             return result[key]
         elif len(key) == 1:
             return result[key[0]]
@@ -54,6 +60,16 @@ def get_val(result: dict, key: str | Sequence[str], *, default=RAISE):
         if default is not RAISE:
             return default
         raise
+
+
+def get_pretty_key(key: Key):
+    if isinstance(key, str):
+        return key
+    if isinstance(key, Sequence):
+        return ".".join(key)
+    if callable(key):
+        return key.__name__
+    raise TypeError(f"{key} must be str, Sequence or callable!")
 
 
 def show_bar_chart(data: dict[str, float | np.floating], x_label: str, y_label: str, title: str):
@@ -69,14 +85,14 @@ def show_bar_chart(data: dict[str, float | np.floating], x_label: str, y_label: 
     plt.show()
 
 
-def bar_chart_per_algorithm(results: list[dict], key: str | Sequence[str], stat_method=np.mean, only_if=lambda res: True):
+def bar_chart_per_algorithm(results: list[dict], key: Key, stat_method=np.mean, only_if=lambda res: True):
     algs = get_algorithm_names(results)
 
     key_per_alg = {
         a: stat_method([get_val(entry, key) for entry in results if entry['algorithm_name'] == a and only_if(entry)])
         for a in algs}
 
-    pretty_key = key if isinstance(key, str) else ".".join(key)
+    pretty_key = get_pretty_key(key)
     show_bar_chart(
         data=key_per_alg,
         x_label='Algorithm',
@@ -85,7 +101,8 @@ def bar_chart_per_algorithm(results: list[dict], key: str | Sequence[str], stat_
     )
 
 
-def bar_chart_per_algorithm_and_oracle(results: list[dict], key: str | Sequence[str], stat_method=np.mean, only_if=lambda res: True):
+def bar_chart_per_algorithm_and_oracle(results: list[dict], key: Key, stat_method=np.mean,
+                                       only_if=lambda res: True, title: str =None):
     algs = get_algorithm_names(results)
     eq_oracles = get_oracle_names(results)
 
@@ -95,16 +112,16 @@ def bar_chart_per_algorithm_and_oracle(results: list[dict], key: str | Sequence[
                                                      and only_if(entry)])
                            for (a, o) in itertools.product(algs, eq_oracles)}
 
-    pretty_key = key if isinstance(key, str) else ".".join(key)
+    pretty_key = get_pretty_key(key)
     show_bar_chart(
         data=key_per_alg_and_orc,
         x_label='Algorithm/Oracle',
         y_label=pretty_key,
-        title=f'{pretty_key} for each algorithm and oracle ({stat_method.__name__} over results)'
+        title=f'{pretty_key} for each algorithm and oracle ({stat_method.__name__} over results)' if title is None else title
     )
 
 
-def bar_chart_per_number_of_original_states(results: list[dict], key: str | Sequence[str], stat_method=np.mean, only_if=lambda res: True):
+def bar_chart_per_number_of_original_states(results: list[dict], key: Key, stat_method=np.mean, only_if=lambda res: True):
     min_num_states = min(r['original_automaton_size'] for r in results)
     max_num_states = max(r['original_automaton_size'] for r in results)
 
@@ -113,7 +130,7 @@ def bar_chart_per_number_of_original_states(results: list[dict], key: str | Sequ
                                                          and only_if(entry)])
                            for num_states in range(min_num_states, max_num_states+1)}
 
-    pretty_key = key if isinstance(key, str) else ".".join(key)
+    pretty_key = get_pretty_key(key)
     show_bar_chart(
         data=key_per_alg_and_orc,
         x_label='Number of states',
@@ -122,7 +139,71 @@ def bar_chart_per_number_of_original_states(results: list[dict], key: str | Sequ
     )
 
 
-def stacked_bar_chart_add_traces_per_algorithm_and_oracle(results: list[dict], key: str | Sequence[str], stat_method=np.mean, only_if=lambda res: True):
+def line_chart_per_number_of_original_states(results: list[dict], *keys: Sequence[Key],
+                                             stat_method=np.mean, only_if=lambda res: True):
+    min_num_states = min(r['original_automaton_size'] for r in results)
+    max_num_states = max(r['original_automaton_size'] for r in results)
+
+    plt.figure(figsize=(10, 6))
+
+    def add_labels(line):
+        x, y = line.get_data()
+        for x, y in zip(x, y):
+            plt.annotate(f'{y:.2f}', (x, y))
+
+    for key in keys:
+        key_per_num_states = {str(num_states): stat_method([get_val(entry, key) for entry in results
+                                                            if entry['original_automaton_size'] == num_states
+                                                            and only_if(entry)])
+                              for num_states in range(min_num_states, max_num_states + 1)}
+
+        pretty_key = get_pretty_key(key)
+        line, = plt.plot(*zip(*key_per_num_states.items()), 'o-', label=pretty_key)
+        add_labels(line)
+
+    plt.xlabel("Number of states")
+    plt.ylabel("Value")
+    plt.title(f"Values over number of states rounds")
+    plt.legend(loc="lower left")
+    plt.tight_layout()
+    plt.show()
+
+
+def line_chart_per_number_of_original_states_per_alg_and_orac(results: list[dict], key: Key,
+                                                              algs: Sequence[str], oracles: Sequence[str],
+                                                              stat_method=np.mean, only_if=lambda res: True):
+    min_num_states = min(r['original_automaton_size'] for r in results)
+    max_num_states = max(r['original_automaton_size'] for r in results)
+
+    plt.figure(figsize=(10, 6))
+
+    def add_labels(line):
+        x, y = line.get_data()
+        for x, y in zip(x, y):
+            plt.annotate(f'{y:.2f}', (x, y))
+
+    for (a, o) in itertools.product(algs, oracles):
+        key_per_num_states = {str(num_states): stat_method([get_val(entry, key) for entry in results
+                                                            if entry['original_automaton_size'] == num_states
+                                                            and entry['algorithm_name'] == a
+                                                            and entry['oracle'] == o
+                                                            and only_if(entry)])
+                              for num_states in range(min_num_states, max_num_states + 1)}
+
+        line, = plt.plot(*zip(*key_per_num_states.items()), 'o-', label=str((a,o)))
+        add_labels(line)
+
+    plt.xlabel("Number of states")
+    pretty_key = get_pretty_key(key)
+    plt.ylabel(pretty_key)
+    plt.title(f"{pretty_key} over number of states, for each algorithm/oracle")
+    plt.legend(loc="lower left")
+    plt.tight_layout()
+    plt.show()
+
+
+
+def stacked_bar_chart_add_traces_per_algorithm_and_oracle(results: list[dict], key: Key, stat_method=np.mean, only_if=lambda res: True):
     algs = get_algorithm_names(results)
     eq_oracles = get_oracle_names(results)
 
@@ -170,9 +251,7 @@ def stacked_bar_chart_add_traces_per_algorithm_and_oracle(results: list[dict], k
     plt.show()
 
 
-
-
-def line_chart_over_learning_rounds(results: list[dict], key: str | Sequence[str], only_if=lambda res: True):
+def line_chart_over_learning_rounds(results: list[dict], key: Key, only_if=lambda res: True):
     algs = get_algorithm_names(results)
 
     plt.figure(figsize=(10, 6))
@@ -206,7 +285,7 @@ def line_chart_over_learning_rounds(results: list[dict], key: str | Sequence[str
     plt.show()
 
 
-def scatterplot_per_alg(results: list[dict], x_key: str | Sequence[str], y_key: str | Sequence[str], only_if=lambda res: True):
+def scatterplot_per_alg(results: list[dict], x_key: Key, y_key: Key, only_if=lambda res: True):
     algs = get_algorithm_names(results)
 
     fix, ax = plt.subplots()
