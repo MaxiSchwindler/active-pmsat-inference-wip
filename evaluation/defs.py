@@ -72,11 +72,13 @@ class AlgorithmWrapper:
 
         positional_args = []
         for a in args:
-            if a not in self.shortcuts:
-                positional_args.append(a)
-            else:
+            if a in self.shortcuts:
                 for k, v in self.shortcuts[a].items():
+                    if k in self.kwargs and self.kwargs[k] != v:
+                        raise ValueError(f"Key {k} is already in kwargs, but would be overwritten by shortcut {a}")
                     self.kwargs[k] = v
+            else:
+                positional_args.append(a)
 
         for key, value in zip(self.positional_arguments, positional_args):
             assert key not in self.kwargs, f"Key {key} is in kwargs, but {key} is also given as positional argument!"
@@ -87,8 +89,11 @@ class AlgorithmWrapper:
         my_kwargs |= kwargs
         if DEBUG_WRAPPER:
             print(f"Calling {self.function.__qualname__} with {my_kwargs}")
-
-        return type(self).function(**my_kwargs)
+        try:
+            return type(self).function(**my_kwargs)
+        except Exception as e:
+            print(f"Exception while calling {self.function.__qualname__} with {my_kwargs}: {e}")
+            raise e
 
 
     def old__init_subclass__(cls, **kwargs):
@@ -232,6 +237,8 @@ class MooreLearningAlgorithm(AlgorithmWrapper):
 class APMSL(MooreLearningAlgorithm):
     function = run_activePmSATLearn
 
+    DEFAULT_RANDOM_WALK = (100, 10, 50)  # (num_walks, min_walk_len, max_walk_len)
+
     default_parameters = dict(
         pm_strategy='rc2',
         timeout=60*MINUTES,
@@ -253,6 +260,7 @@ class APMSL(MooreLearningAlgorithm):
         'gp': 'glitch_processing',
         'rp': 'replay_glitches',
         'wcp': 'window_cex_processing',
+        'rw': 'random_walks',
 
         'cp': 'cex_processing',
         'dgt': 'discard_glitched_traces',
@@ -269,6 +277,15 @@ class APMSL(MooreLearningAlgorithm):
         'NO_REP':   {'replay_glitches': False},
         'WCP':      {'window_cex_processing': True},
         'NO_WCP':   {'window_cex_processing': False},
+        'RW':       {'random_walks': DEFAULT_RANDOM_WALK},
+        'NO_RW':    {'random_walks': False},
+        'ONLY_RW':  {'random_walks': DEFAULT_RANDOM_WALK,
+                     'glitch_processing': False,
+                     'replay_glitches': False,
+                     'window_cex_processing': False,
+                     'cex_processing': False,
+                     'discard_glitched_traces': False,
+                     'add_cex_as_hard_clauses': False,},
 
         'CP':       {'cex_processing': True},
         'NO_CP':    {'cex_processing': False},

@@ -5,6 +5,7 @@ import json
 import multiprocessing
 import os
 import itertools
+import statistics
 import uuid
 
 from datetime import datetime
@@ -23,6 +24,7 @@ from active_pmsatlearn.utils import *
 from evaluation.generate_automata import *
 from evaluation.utils import *
 from evaluation.defs import *
+from f_similarity import stochastic_conformance
 
 logger = get_logger(__file__)
 
@@ -203,7 +205,7 @@ def print_results_info(results: list[dict]):
     sep()
 
     print("Statistics:")
-    for stat in ["Precision (all steps)", "Precision (traces)",
+    for stat in ["Precision", "Recall", "F-Score", "Precision (all steps)", "Precision (all traces)",
                  "Precision per trace (mean)", "Precision per trace (median)",
                  "Strong accuracy (mean)","Strong accuracy (median)",
                  "Medium accuracy (mean)","Medium accuracy (median)",
@@ -314,8 +316,15 @@ def calculate_statistics(original_automaton: MooreMachine, learned_automaton: Mo
     medium_accs = []
     weak_accs = []
     precision_per_trace = []
+    precision = 0
+    recall = 0
+    f_score = 0
 
     if learned_automaton is not None:
+        precision = stochastic_conformance(original_automaton, learned_automaton)
+        recall = stochastic_conformance(learned_automaton, original_automaton)
+        f_score = statistics.harmonic_mean((precision, recall))
+
         for input_combination in input_combinations:
             orig_outputs = original_automaton.execute_sequence(original_automaton.initial_state, input_combination)
             learned_outputs = learned_automaton.execute_sequence(learned_automaton.initial_state, input_combination)
@@ -340,11 +349,13 @@ def calculate_statistics(original_automaton: MooreMachine, learned_automaton: Mo
         "Length of each trace": len(input_combinations[0]),
         "Number of outputs": num_outputs,
         "Number of correct outputs": num_correct_outputs,
+        "Precision": precision,
+        "Recall": recall,
+        "F-Score": f_score,
         "Precision (all steps)": (num_correct_outputs / num_outputs) if num_outputs > 0 else 0,
-        "Precision (traces)": num_completely_correct_traces / len(input_combinations),
+        "Precision (all traces)": num_completely_correct_traces / len(input_combinations),
         "Precision per trace (mean)": np.mean(precision_per_trace or [0]),
         "Precision per trace (median)": np.median(precision_per_trace or [0]),
-        # "Recall": num_correct_outputs / num_outputs ??
         "Strong accuracy (mean)": np.mean(strong_accs or [0]),
         "Strong accuracy (median)": np.median(strong_accs or [0]),
         "Medium accuracy (mean)": np.mean(medium_accs or [0]),
