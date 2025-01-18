@@ -8,6 +8,7 @@ from pprint import pprint
 from typing import Any, Iterable, Literal
 from collections.abc import Sequence
 
+import numpy as np
 from aalpy.SULs import MealySUL, MooreSUL
 from aalpy.automata import MooreMachine
 from aalpy.base import SUL
@@ -254,3 +255,115 @@ def get_args_from_input(parser):
                 print(f"Invalid value for {arg_name}: {e}")
 
     return argparse.Namespace(**args_dict)
+
+
+def print_results_info(results: list[dict]):
+    def sep():
+        print("-" * 40)
+
+    algorithms = list(set([entry["algorithm_name"] for entry in results]))
+    valid_results = [entry for entry in results if "exception" not in entry]
+    results_with_model = [entry for entry in results if entry["learned_automaton_size"] is not None ]
+
+    sep()
+    print("RESULTS:")
+    sep()
+    print(f"Algorithms: {algorithms}")
+    print(f"Oracles: {list(set(r['oracle'] for r in results))}")
+    sep()
+
+    num_automata = len(set(r['original_automaton'] for r in results))
+    min_num_states = min(r['original_automaton_size'] for r in results)
+    max_num_states = max(r['original_automaton_size'] for r in results)
+    min_num_inputs = min(r['original_automaton_num_inputs'] for r in results)
+    max_num_inputs = max(r['original_automaton_num_inputs'] for r in results)
+    min_num_outputs = min(r['original_automaton_num_outputs'] for r in results)
+    max_num_outputs = max(r['original_automaton_num_outputs'] for r in results)
+
+    print(f"Unique automata: {num_automata}")
+    print(f"Number of states per automaton: {min_num_states} to {max_num_states}")
+    print(f"Number of inputs per automaton: {min_num_inputs} to {max_num_inputs}")
+    print(f"Number of outputs per automaton: {min_num_outputs} to {max_num_outputs}")
+    sep()
+
+    num_results = len(results)
+    num_valid = len(valid_results)
+    num_learned = sum(r['learned_correctly'] for r in results)
+    num_timed_out = sum(r['timed_out'] for r in valid_results)
+    num_bisimilar = sum(r['bisimilar'] for r in results)
+    num_returned_model = sum(r['learned_automaton_size'] is not None for r in valid_results)
+
+    print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
+    print(f"Returned models (did not return None): {num_returned_model} of {num_valid} ({num_returned_model / num_valid * 100:.2f}%)")
+    if num_valid > 0:
+        print(f"Learned correctly: {num_learned} of {num_valid} ({num_learned / num_valid * 100:.2f}%)")
+        print(f"Bisimilar: {num_bisimilar} of {num_valid} ({num_bisimilar / num_valid * 100:.2f}%)")
+    if num_timed_out:
+        num_timed_out_but_correct = sum(r['timed_out'] and r['learned_correctly'] for r in valid_results)
+        num_timed_out_but_bisimilar = sum(r['timed_out'] and r['bisimilar'] for r in valid_results)
+        print(f"Timed out: {num_timed_out} of {num_results} ({num_timed_out / num_results * 100:.2f}%)")
+        print(f"  - Nevertheless correct: {num_timed_out_but_correct}")
+        print(f"  - Nevertheless bisimilar: {num_timed_out_but_bisimilar}")
+    sep()
+
+    print("Statistics:")
+    for stat in ["Precision", "Recall", "F-Score", "Precision (all steps)", "Precision (all traces)",
+                 "Precision per trace (mean)", "Precision per trace (median)",
+                 "Strong accuracy (mean)","Strong accuracy (median)",
+                 "Medium accuracy (mean)","Medium accuracy (median)",
+                 "Weak accuracy (mean)","Weak accuracy (median)"]:
+        print(f"  {stat}: ")
+        for stat_method in (np.mean, np.median, np.min, np.max):
+            val_all = stat_method([r[stat] for r in results])
+            val_corr = stat_method([r[stat] for r in (res for res in valid_results if res["learned_correctly"])] or [0])
+            val_timed = stat_method([r[stat] for r in (res for res in valid_results if res["timed_out"])] or [0])
+            val_not_timed = stat_method([r[stat] for r in (res for res in valid_results if not res["timed_out"])] or [0])
+            print(f"    {stat_method.__name__:6}: {val_all:.2f} (with TO: {val_timed:.2f} | no TO: {val_not_timed:.2f})")
+    sep()
+
+    glitch_percent = set(r.get('glitch_percent', None) for r in results)
+    assert len(glitch_percent) == 1
+    glitch_percent = list(glitch_percent)[0]
+
+    if glitch_percent:
+        print(f"Glitch percentage: {glitch_percent}%")
+        print("Fault type: 'send_random_input'")
+        sep()
+
+    exceptions = [r['exception'] for r in results if "exception" in r]
+    unique_exceptions = list(set(exceptions))
+    num_exceptions = len(exceptions)
+
+    if num_exceptions:
+        print(f"Exceptions: {num_exceptions}")
+        print(f"Unique exceptions: {len(unique_exceptions)}")
+
+    for e in unique_exceptions:
+        print("\t", e)
+        num_times = exceptions.count(e)
+        perc_of_exc = num_times / num_exceptions * 100
+        perc_of_runs = num_times / num_results * 100
+        unique_automata = list(set(r['original_automaton'] for r in results if r.get('exception', None) == e))
+        unique_algorithms = list(set(r['algorithm_name'] for r in results if r.get('exception', None) == e))
+
+        print("\t\t",
+              f"occurred {num_times} times ({perc_of_exc:.2f}% of all exceptions / {perc_of_runs:.2f}% of all runs)")
+        print("\t\t", f"occurred in {len(unique_automata)} unique automata (", end="")
+
+        every_time = []
+        for a in unique_automata:
+            runs_with_a = sum(1 for r in results if r['original_automaton'] == a)
+            runs_with_a_and_e = sum(
+                1 for r in results if (r['original_automaton'] == a) and (r.get('exception', None) == e))
+            print(f"{runs_with_a_and_e}/{runs_with_a}", end="")
+            if a != unique_automata[-1]:
+                print(", ", end="")
+            else:
+                print(')')
+            if runs_with_a == runs_with_a_and_e:
+                every_time.append(a)
+
+        for a in every_time:
+            print("\t\t\t", f"occurred every time with {a}")
+
+        print("\t\t", f"occurred in {len(unique_algorithms)} unique algorithms: {unique_algorithms}")
