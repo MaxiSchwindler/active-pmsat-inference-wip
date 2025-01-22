@@ -4,7 +4,7 @@ import os
 from collections import defaultdict
 from collections.abc import Sequence, Callable
 from functools import cmp_to_key
-from typing import TypeAlias
+from typing import TypeAlias, Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -30,6 +30,10 @@ def is_valid_result(result: dict) -> bool:
     return "exception" not in result
 
 
+def get_all_possible_values_for_key(results: list[dict], key: Key, only_if=lambda res: True) -> list[Any]:
+    return sorted(list(set(get_val(entry, key) for entry in results if only_if(entry))))
+
+
 def load_results(results_dir: str) -> list[dict]:
     results = []
     for filename in os.listdir(results_dir):
@@ -40,16 +44,20 @@ def load_results(results_dir: str) -> list[dict]:
     return results
 
 
-def get_val(result: dict, key: Key, *, default=RAISE):
+def get_val(result: dict, key: Key, *, default=RAISE, callable_kwargs: dict = None):
     """
     Get the value of @key in the given result.
     Supports nested keys, e.g. ("last_pmsat_info", "num_vars")
     """
     assert isinstance(key, Sequence) or isinstance(key, str) or callable(key)
+    if callable_kwargs:
+        assert callable(key), f"{key} is not callable but callable_kwargs is specified!"
+    else:
+        callable_kwargs = {}
 
     try:
         if callable(key):
-            return key(result)
+            return key(result, **callable_kwargs)
         elif isinstance(key, str):
             return result[key]
         elif len(key) == 1:
@@ -102,23 +110,59 @@ def bar_chart_per_algorithm(results: list[dict], key: Key, stat_method=np.mean, 
 
 
 def bar_chart_per_algorithm_and_oracle(results: list[dict], key: Key, stat_method=np.mean,
-                                       only_if=lambda res: True, title: str =None):
+                                       only_if=lambda res: True, title: str=None, group_by: Key = None):
     algs = get_algorithm_names(results)
     eq_oracles = get_oracle_names(results)
 
-    key_per_alg_and_orc = {str((a, o)): stat_method([get_val(entry, key) for entry in results
-                                                     if entry['algorithm_name'] == a
-                                                     and entry['oracle'] == o
-                                                     and only_if(entry)])
-                           for (a, o) in itertools.product(algs, eq_oracles)}
-
     pretty_key = get_pretty_key(key)
-    show_bar_chart(
-        data=key_per_alg_and_orc,
-        x_label='Algorithm/Oracle',
-        y_label=pretty_key,
-        title=f'{pretty_key} for each algorithm and oracle ({stat_method.__name__} over results)' if title is None else title
-    )
+    if group_by is None:
+        key_per_alg_and_orc = {str((a, o)): stat_method([get_val(entry, key) for entry in results
+                                                         if entry['algorithm_name'] == a
+                                                         and entry['oracle'] == o
+                                                         and only_if(entry)])
+                               for (a, o) in itertools.product(algs, eq_oracles)}
+
+        show_bar_chart(
+            data=key_per_alg_and_orc,
+            x_label='Algorithm/Oracle',
+            y_label=pretty_key,
+            title=f'{pretty_key} for each algorithm and oracle ({stat_method.__name__} over results)' if title is None else title
+        )
+    else:
+        # alg_oracle_combos = [(a, o) for (a, o) in itertools.product(algs, eq_oracles)]
+
+        all_possible_vals_for_group_by_key = get_all_possible_values_for_key(results, group_by, only_if)
+        group_by_val_to_list_of_values = {g: [] for g in all_possible_vals_for_group_by_key}
+
+        alg_and_oracles = []
+        for (a, o) in itertools.product(algs, eq_oracles):
+            for group_by_val in all_possible_vals_for_group_by_key:
+                val = stat_method([get_val(entry, key) for entry in results
+                                   if only_if(entry)
+                                   and get_val(entry, group_by) == group_by_val
+                                   and entry['algorithm_name'] == a
+                                   and entry['oracle'] == o])
+                group_by_val_to_list_of_values[group_by_val].append(val)
+            alg_and_oracles.append(str((a, o)))
+
+        label_locations = np.arange(len(alg_and_oracles))
+        width = 1 / (len(all_possible_vals_for_group_by_key)+1)
+        multiplier = 0
+
+        fig, ax = plt.subplots(figsize=(10, 6), layout='constrained')
+
+        for group_by_val, list_of_values in group_by_val_to_list_of_values.items():
+            offset = width * multiplier
+            rects = ax.bar(label_locations + offset, list_of_values, width, label=group_by_val)
+            ax.bar_label(rects, label_type='center', fmt='%.2f')
+            multiplier += 1
+
+        ax.set_ylabel(pretty_key)
+        ax.set_xlabel("Algorithm/Oracle")
+        ax.set_xticks(label_locations + width, alg_and_oracles)
+        ax.set_title(f'{pretty_key} for each algorithm and oracle ({stat_method.__name__} over results)' if title is None else title)
+        ax.legend(title="Glitch Percentage")
+        plt.xticks(rotation=45, ha='right')
 
 
 def bar_chart_per_number_of_original_states(results: list[dict], key: Key, stat_method=np.mean, only_if=lambda res: True):
@@ -163,7 +207,7 @@ def line_chart_per_number_of_original_states(results: list[dict], *keys: Sequenc
 
     plt.xlabel("Number of states")
     plt.ylabel("Value")
-    plt.title(f"Values over number of states rounds")
+    plt.title(f"Values over number of states of original automaton")
     plt.legend(loc="lower left")
     plt.tight_layout()
     plt.show()
@@ -241,6 +285,7 @@ def stacked_bar_chart_add_traces_per_algorithm_and_oracle(results: list[dict], k
 
     for proc_step, list_of_num_traces_per_alg in proc_name_to_list_of_num_traces_per_alg.items():
         p = ax.bar(x_labels, list_of_num_traces_per_alg, width=0.5, label=proc_step, bottom=bottom)
+        ax.bar_label(p, label_type='center', fmt='%.2f')
         bottom += list_of_num_traces_per_alg
 
     ax.set_title("Number of additional traces per algorithm/oracle")
@@ -251,7 +296,8 @@ def stacked_bar_chart_add_traces_per_algorithm_and_oracle(results: list[dict], k
     plt.show()
 
 
-def line_chart_over_learning_rounds(results: list[dict], key: Key, only_if=lambda res: True):
+def line_chart_over_learning_rounds(results: list[dict], key: Key, only_if=lambda res: True, stay_at_last_val=lambda val: False,
+                                    get_from_full_result: bool = False, colorcode_by_alg: bool = True):
     algs = get_algorithm_names(results)
 
     plt.figure(figsize=(10, 6))
@@ -261,14 +307,24 @@ def line_chart_over_learning_rounds(results: list[dict], key: Key, only_if=lambd
     def add_line(result, color, label):
         learning_info = result['detailed_learning_info']
         steps = sorted(int(step) for step in learning_info.keys())
-        values = [get_val(learning_info[str(step)], key, default=-1) for step in steps]
+        if not get_from_full_result:
+            values = [get_val(learning_info[str(step)], key, default=-1) for step in steps]
+        else:
+            values = [get_val(result, key, default=-1, callable_kwargs=dict(step=step)) for step in steps]
+
+        for i in range(len(values)):
+            if stay_at_last_val(values[i]) and i > 0:
+                values[i] = values[i-1]
 
         kwargs = {}
         if label not in legend_labels:
             kwargs["label"] = label
             legend_labels.add(label)
+        if colorcode_by_alg:
+            kwargs["color"] = color
 
-        plt.plot(steps, values, color=color, alpha=0.7, **kwargs)
+        lines = plt.plot(steps, values, alpha=0.7, **kwargs)
+        plt.scatter(steps[-1], values[-1], alpha=0.7, marker='*', color=lines[0].get_color())
 
     for result in results:
         if not only_if(result):
@@ -278,8 +334,9 @@ def line_chart_over_learning_rounds(results: list[dict], key: Key, only_if=lambd
             add_line(result, color=colors[alg], label=alg)
 
     plt.xlabel("learning round")
-    plt.ylabel(key)
-    plt.title(f"{key} across learning rounds")
+    pretty_key = get_pretty_key(key)
+    plt.ylabel(pretty_key)
+    plt.title(f"{pretty_key} across learning rounds")
     plt.legend(title="Algorithm", loc="upper left")
     plt.tight_layout()
     plt.show()

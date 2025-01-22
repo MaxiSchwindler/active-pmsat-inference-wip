@@ -8,7 +8,7 @@ from aalpy.SULs import MooreSUL
 from aalpy.utils import load_automaton_from_file
 from aalpy.utils import bisimilar
 
-from active_pmsatlearn.defs import EqOracleTermination
+from active_pmsatlearn.defs import *
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from evaluation.defs import oracles
 from evaluation.learn_automata import setup_sul, calculate_statistics
@@ -61,8 +61,11 @@ def main():
             timeout=200,
             print_level=2,
             return_data=True,
-            window_cex_processing=False,
-            termination_mode=EqOracleTermination(get_oracle('Random', sul))
+            termination_mode=ApproximateScoreImprovementTermination(),
+            # termination_mode=HypothesisDoesNotChangeTermination(),
+            # termination_mode=GlitchThresholdTermination(threshold=0.0)
+            # window_cex_processing=False,
+            # termination_mode=EqOracleTermination(get_oracle('Random', sul))
             # input_completeness_preprocessing=False,
             # glitch_processing=False,
             # random_state_exploration=True,

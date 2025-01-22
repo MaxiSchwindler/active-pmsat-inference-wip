@@ -5,8 +5,8 @@ from collections import defaultdict
 import random
 from typing import Literal
 
-from active_pmsatlearn.heuristics import simple_heuristic, intermediary_heuristic, advanced_heuristic
 from pmsatlearn import run_pmSATLearn
+from active_pmsatlearn.heuristics import *
 from active_pmsatlearn.common import *
 from active_pmsatlearn.defs import *
 from active_pmsatlearn.utils import *
@@ -43,6 +43,7 @@ def run_activePmSATLearn(
     # postprocessing
     glitch_processing: bool | str = GLITCH_PROCESSING_DEFAULT,
     replay_glitches: bool | Sequence[str] = REPLAY_GLITCHES_DEFAULT,
+    # state_coverage: bool = False,  # TODO
     window_cex_processing: bool = False,
     random_walks: bool | tuple[int, int, int] = False,
 
@@ -187,6 +188,8 @@ def run_activePmSATLearn(
 
     while not (timed_out := (time.time() >= must_end_by)):
         logger.info(f"Starting learning round {(learning_rounds := learning_rounds + 1)}")
+
+        min_num_states = max(min_num_states, get_num_outputs(traces))
         detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
         detailed_learning_info[learning_rounds]["sliding_window_start"] = min_num_states
 
@@ -218,13 +221,17 @@ def run_activePmSATLearn(
             else:
                 logger.debug(f"First timed-out hypothesis was in right side of sliding window. Continuing with truncated window.")
 
+        detailed_learning_info[learning_rounds]["pmsat_info"] = {ns: info for ns, (h, hs, info) in hypotheses.items()}
+        detailed_learning_info[learning_rounds]["hyp"] = {ns: str(h) for ns, (h, hs, info) in hypotheses.items()}
+        detailed_learning_info[learning_rounds]["hyp_stoc"] = {ns: str(hs) for ns, (h, hs, info) in hypotheses.items()}
+
         #####################################
         #           PREPROCESSING           #
         #####################################
 
         if input_completeness_preprocessing:  # TODO: could this lead to an infinite loop?
             preprocessing_additional_traces = do_input_completeness_preprocessing(hyps=hypotheses, suffix_mode=input_completeness_preprocessing,
-                                                                    **common_processing_kwargs)
+                                                                                  **common_processing_kwargs)
 
             remove_duplicate_traces(traces, preprocessing_additional_traces)  # TODO: does de-duplication affect anything? check!
             log_and_store_additional_traces(preprocessing_additional_traces, detailed_learning_info[learning_rounds],
@@ -309,13 +316,17 @@ def run_activePmSATLearn(
             traces = traces + postprocessing_additional_traces_replay
 
         if random_walks:
-            peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)
             postprocessing_additional_traces_random_walks = do_random_walks(*random_walks, **common_processing_kwargs)
 
             remove_duplicate_traces(traces, postprocessing_additional_traces_random_walks)  # TODO: does de-duplication affect anything? check!
             log_and_store_additional_traces(postprocessing_additional_traces_random_walks, detailed_learning_info[learning_rounds], "random walks")
 
             traces = traces + postprocessing_additional_traces_random_walks
+
+        # if state_coverage:
+        #     peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)
+        #
+        #     postprocessing_additional_traces_state_coverage = do_state_coverage()
 
         if uses_eq_oracle:
             eq_oracle_cex = action.additional_data["cex"]
@@ -356,7 +367,6 @@ def run_activePmSATLearn(
 
         previous_hypotheses = hypotheses
         previous_scores = scores
-        min_num_states = max(min_num_states, get_num_outputs(traces))
 
     #####################################
     #          RETURN RESULT            #
@@ -469,13 +479,12 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
                        current_min_num_states: int, traces_used_to_learn: list[Trace],
                        termination_mode: TerminationMode,
                        current_learning_info: dict[str, Any]) -> Action:
-    peak_index = current_learning_info["peak_index"] = find_index_of_unimodal_peak(current_scores)
+    peak_index = current_learning_info["peak_index"] = find_index_of_absolute_peak(current_scores)
     peak_num_states = current_learning_info["peak_num_states"] = get_num_states_from_scores_index(current_scores, peak_index)
 
-    prev_peak_index = find_index_of_unimodal_peak(previous_scores)
+    prev_peak_index = find_index_of_absolute_peak(previous_scores)
     prev_peak_num_states = get_num_states_from_scores_index(previous_scores, prev_peak_index)
 
-    unimodal_peak = bool(peak_index is not None)
     sliding_window_size = len(current_scores)
     min_allowed_num_states = get_num_outputs(traces_used_to_learn)
 
@@ -495,35 +504,16 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
             logger.debug_ext(f"Counterexample: {cex}")
             continue_kwargs["additional_data"] = dict(cex=cex, cex_outputs=cex_outputs)
 
-    if not unimodal_peak:
-        match previous_hypotheses, prev_peak_index:
-            case None, None:
-                logger.debug("No unimodal peak found in initial round; continuing with same window after collecting more traces.")
-                return Continue(**continue_kwargs)
-            case _, None:
-                logger.debug("No unimodal peak found in current and previous round; using absolute peak.")
-                peak_index = current_learning_info["absolute_peak_index"] = find_index_of_absolute_peak(current_scores)
-                peak_num_states = current_learning_info["absolute_peak_num_states"] = get_num_states_from_scores_index(current_scores, peak_index)
-                prev_peak_index = current_learning_info["absolute_prev_peak_index"] = find_index_of_absolute_peak(previous_scores)
-                prev_peak_num_states = current_learning_info["absolute_prev_peak_num_states"] = get_num_states_from_scores_index(previous_scores, prev_peak_index)
-            case _, _:
-                logger.debug("No unimodal peak found in current round; continuing with same window after collecting more traces")
-                return Continue(**continue_kwargs)
-            case _:
-                raise ValueError(f"Unhandled case: {previous_hypotheses=}, {prev_peak_index=}")
+    if previous_hypotheses is None:
+        logger.debug("No previous hypotheses; learn again with same window.")
+        return Continue(**continue_kwargs)
 
     logger.debug(f"Found peak at index {peak_index} of sliding window <{min(current_scores.keys())}-{max(current_scores.keys())}>; "
                  f"i.e. at {peak_num_states} states")
-    if previous_hypotheses is not None:
-        logger.debug(f"Previous peak was at index {prev_peak_index} of sliding window <{min(previous_scores.keys())}-{max(previous_scores.keys())}>; "
-                     f"i.e. at {prev_peak_num_states} states")
+    logger.debug(f"Previous peak was at index {prev_peak_index} of sliding window <{min(previous_scores.keys())}-{max(previous_scores.keys())}>; "
+                 f"i.e. at {prev_peak_num_states} states")
 
-    if unimodal_peak:
-        currently_positioned_correctly = is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states)
-    else:
-        # if we don't have an unimodal peak, we don't move the window -> assume that we are positioned correctly
-        # TODO: we could also check for is_positioned_correctly and move the window such that the absolute peak is in the middle
-        currently_positioned_correctly = True
+    currently_positioned_correctly = is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states)
 
     if not currently_positioned_correctly:
         mid_index = sliding_window_size // 2
@@ -539,6 +529,7 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
 
         return Continue(next_min_num_states=min_num_states, **continue_kwargs)
 
+    # TODO do we want this?
     if prev_peak_num_states != peak_num_states:
         logger.debug(f"Continue learning with the same window, since the last peak was at a different number of states ({prev_peak_num_states})")
         return Continue(**continue_kwargs)
@@ -573,6 +564,37 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
                 return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
             else:
                 logger.debug(msg + "Continuing with additional traces.")
+                return Continue(**continue_kwargs)
+
+        case ApproximateScoreImprovementTermination():
+            curr_approx_score = approximate_advanced_heuristic(peak_hyp, peak_pmsat_info, traces_used_to_learn)
+            prev_approx_score = approximate_advanced_heuristic(prev_peak_hyp, peak_pmsat_info, traces_used_to_learn)
+            msg = f"Peak hypothesis has approximate score of {curr_approx_score}  while previous peak hypothesis has {prev_approx_score}. "
+            if prev_approx_score >= curr_approx_score:
+                logger.debug(msg + "Terminating.")
+                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+            else:
+                logger.debug(msg + "Continuing with additional traces.")
+                return Continue(**continue_kwargs)
+
+        case ScoreImprovementTermination():
+            curr_score = current_scores[peak_num_states]
+            prev_score = previous_scores[prev_peak_num_states]
+            msg = f"Peak hypothesis has score of {curr_score} while previous peak hypothesis has {prev_score}. "
+            if prev_score >= curr_score:
+                logger.debug(msg + "Terminating.")
+                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+            else:
+                logger.debug(msg + "Continuing with additional traces.")
+                return Continue(**continue_kwargs)
+
+        case HypothesisDoesNotChangeTermination():
+            dis = peak_hyp.find_distinguishing_seq(peak_hyp.initial_state, prev_peak_hyp.initial_state, peak_hyp.get_input_alphabet())
+            if dis is None:
+                logger.debug(f"No distinguishing sequence between current hypothesis and previous hypothesis found. Terminating")
+                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+            else:
+                logger.debug(f"Found distinguishing sequence between current and previous hypothesis. Continue.")
                 return Continue(**continue_kwargs)
 
         case EqOracleTermination(eq_oracle):

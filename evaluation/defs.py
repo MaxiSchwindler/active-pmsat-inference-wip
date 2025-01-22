@@ -237,7 +237,7 @@ class MooreLearningAlgorithm(AlgorithmWrapper):
 class APMSL(MooreLearningAlgorithm):
     function = run_activePmSATLearn
 
-    DEFAULT_RANDOM_WALK = (100, 10, 50)  # (num_walks, min_walk_len, max_walk_len)
+    DEFAULT_RANDOM_WALK = (50, 10, 50)  # (num_walks, min_walk_len, max_walk_len)
 
     default_parameters = dict(
         pm_strategy='rc2',

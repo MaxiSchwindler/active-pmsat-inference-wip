@@ -79,3 +79,10 @@ class GlitchImprovementTermination(ImprovementTermination):
     and the percentage of glitches did not improve in the newer round.
     """
     pass
+
+class ApproximateScoreImprovementTermination(ImprovementTermination):
+    pass
+
+
+class HypothesisDoesNotChangeTermination(ImprovementTermination):
+    pass

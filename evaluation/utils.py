@@ -263,7 +263,7 @@ def print_results_info(results: list[dict]):
 
     algorithms = list(set([entry["algorithm_name"] for entry in results]))
     valid_results = [entry for entry in results if "exception" not in entry]
-    results_with_model = [entry for entry in results if entry["learned_automaton_size"] is not None ]
+    results_with_model = [entry for entry in valid_results if entry["learned_automaton_size"] != 0 ]
 
     sep()
     print("RESULTS:")
@@ -322,8 +322,8 @@ def print_results_info(results: list[dict]):
     sep()
 
     glitch_percent = set(r.get('glitch_percent', None) for r in results)
-    assert len(glitch_percent) == 1
-    glitch_percent = list(glitch_percent)[0]
+    # assert len(glitch_percent) == 1
+    # glitch_percent = list(glitch_percent)[0]
 
     if glitch_percent:
         print(f"Glitch percentage: {glitch_percent}%")

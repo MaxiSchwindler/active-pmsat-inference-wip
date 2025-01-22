@@ -121,7 +121,7 @@ def do_glitch_processing(hyps: HypothesesWindow, traces_used_to_learn_hyp: list[
                 if inp.startswith("!"):  # glitched transition
                     state_prefix = [get_input_from_stoc_trans(i) for i in state.prefix]
                     glitched_input = get_input_from_stoc_trans(inp)
-                    assert (glitched_input, next_state.output) in all_glitched_steps, (f"The tuple {(glitched_input, next_state.output)}"
+                    assert (glitched_input, next_state.output) in all_glitched_steps, (f"The tuple {(glitched_input, next_state.output)} "
                                                                                        f"was not found in {all_glitched_steps=}")
                     prefix = state_prefix + [glitched_input]
 
