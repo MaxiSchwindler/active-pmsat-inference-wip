@@ -102,11 +102,11 @@ class TracedMooreSUL(MooreSUL):
             self.traces.append(new_trace)
             self.current_trace = new_trace
 
-    def step(self, input):
-        output = super().step(input)
-        if input is None:
+    def step(self, letter=None):
+        output = super().step(letter)
+        if letter is None:
             return output
-        entry = (input, output)
+        entry = (letter, output)
         self.traces[-1].append(entry)
         return output
 

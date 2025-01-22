@@ -5,6 +5,9 @@ from collections import defaultdict
 import random
 from typing import Literal
 
+from aalpy import KWayTransitionCoverageEqOracle, AutomatonSUL
+
+from evaluation.utils import TracedMooreSUL
 from pmsatlearn import run_pmSATLearn
 from active_pmsatlearn.heuristics import *
 from active_pmsatlearn.common import *
@@ -43,9 +46,9 @@ def run_activePmSATLearn(
     # postprocessing
     glitch_processing: bool | str = GLITCH_PROCESSING_DEFAULT,
     replay_glitches: bool | Sequence[str] = REPLAY_GLITCHES_DEFAULT,
-    # state_coverage: bool = False,  # TODO
     window_cex_processing: bool = False,
-    random_walks: bool | tuple[int, int, int] = False,
+    random_steps_per_round: int = 0,
+    transition_coverage_steps: int = 0,
 
     # postprocessing, only relevant if termination_mode = EqOracleTermination(...)
     cex_processing: bool = True,
@@ -81,7 +84,7 @@ def run_activePmSATLearn(
 
     :param glitch_processing: whether glitch processing should be performed, and what type of suffix to append
     :param window_cex_processing: whether window counterexample processing should be performed.
-    :param random_walks: either False or a tuple of integers (num_walks, min_walk_len, max_walk_len)
+    :param random_steps_per_round: either False or a tuple of integers (num_walks, min_walk_len, max_walk_len)
     :param replay_glitches:
 
     :param cex_processing: whether counterexample processing should be performed; only relevant if eq_oracle is given
@@ -110,11 +113,11 @@ def run_activePmSATLearn(
         glitch_processing = GLITCH_PROCESSING_DEFAULT
     if replay_glitches is True:
         replay_glitches = REPLAY_GLITCHES_DEFAULT
-    if random_walks and not (isinstance(random_walks, Sequence) and len(random_walks) == 3 and all(isinstance(p, int) for p in random_walks)):
-        raise ValueError("random_walks must either be False or a tuple of integers (num_walks, min_walk_len, max_walk_len)")
 
     assert glitch_processing in ('random_suffix', 'all_suffixes') or not glitch_processing
     assert (isinstance(replay_glitches, Sequence) and all(g in ('original_suffix', 'random_suffix') for g in replay_glitches)) or not replay_glitches
+    assert isinstance(random_steps_per_round, int)
+    assert isinstance(transition_coverage_steps, int)
 
     if discard_glitched_traces:
         # implementation detail: we store glitchless traces inside a kwargs dict we pass to pmsat-learn.
@@ -315,18 +318,22 @@ def run_activePmSATLearn(
 
             traces = traces + postprocessing_additional_traces_replay
 
-        if random_walks:
-            postprocessing_additional_traces_random_walks = do_random_walks(*random_walks, **common_processing_kwargs)
+        if random_steps_per_round:
+            postprocessing_additional_traces_random_walks = do_random_walks(random_steps_per_round, **common_processing_kwargs)
 
             remove_duplicate_traces(traces, postprocessing_additional_traces_random_walks)  # TODO: does de-duplication affect anything? check!
             log_and_store_additional_traces(postprocessing_additional_traces_random_walks, detailed_learning_info[learning_rounds], "random walks")
 
             traces = traces + postprocessing_additional_traces_random_walks
 
-        # if state_coverage:
-        #     peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)
-        #
-        #     postprocessing_additional_traces_state_coverage = do_state_coverage()
+        if transition_coverage_steps:
+            peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+            postprocessing_additional_traces_state_coverage = do_transition_coverage(peak_hyp, transition_coverage_steps, **common_processing_kwargs)
+
+            remove_duplicate_traces(traces, postprocessing_additional_traces_state_coverage)
+            log_and_store_additional_traces(postprocessing_additional_traces_state_coverage, detailed_learning_info[learning_rounds], "transition coverage")
+
+            traces = traces + postprocessing_additional_traces_state_coverage
 
         if uses_eq_oracle:
             eq_oracle_cex = action.additional_data["cex"]
@@ -716,13 +723,31 @@ def do_replay_glitches(hyps: HypothesesWindow, traces_used_to_learn: list[Trace]
     return new_traces
 
 
-def do_random_walks(num_walks: int, min_walk_lean: int, max_walk_len: int, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+def do_transition_coverage(hyp: SupportedAutomaton, num_steps: int, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+    logger.debug(f"Performing {num_steps} for transition coverage")
+    hyp_sul = TracedMooreSUL(hyp)
+    oracle = KWayTransitionCoverageEqOracle(alphabet=alphabet, sul=hyp_sul, max_number_of_steps=num_steps)
+    oracle.find_cex(hyp)
+    assert hyp_sul.num_steps <= num_steps
+
     new_traces = []
-    for _ in range(num_walks):
-        walk_len = random.randint(min_walk_lean, max_walk_len)
+    for trace in hyp_sul.traces:
+        inputs = [i for (i, o) in trace[1:]]
+        new_traces.append(trace_query(sul, inputs))
+
+    return new_traces
+
+
+def do_random_walks(num_steps: int, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+    logger.debug(f"Performing random walks with a total of {num_steps} steps")
+    new_traces = []
+    remaining_steps = num_steps
+    while remaining_steps > 0:
+        walk_len = random.randint(1, remaining_steps)
         random_walk = tuple(random.choice(alphabet) for _ in range(walk_len))
 
         new_traces.append(trace_query(sul, random_walk))
+        remaining_steps -= walk_len
 
     return new_traces
 

@@ -237,7 +237,7 @@ class MooreLearningAlgorithm(AlgorithmWrapper):
 class APMSL(MooreLearningAlgorithm):
     function = run_activePmSATLearn
 
-    DEFAULT_RANDOM_WALK = (50, 10, 50)  # (num_walks, min_walk_len, max_walk_len)
+    DEFAULT_NUM_RANDOM_STEPS = 200
 
     default_parameters = dict(
         pm_strategy='rc2',
@@ -260,7 +260,8 @@ class APMSL(MooreLearningAlgorithm):
         'gp': 'glitch_processing',
         'rp': 'replay_glitches',
         'wcp': 'window_cex_processing',
-        'rw': 'random_walks',
+        'rs': 'random_steps_per_round',
+        'tc': 'transition_coverage_steps',
 
         'cp': 'cex_processing',
         'dgt': 'discard_glitched_traces',
@@ -277,12 +278,25 @@ class APMSL(MooreLearningAlgorithm):
         'NO_REP':   {'replay_glitches': False},
         'WCP':      {'window_cex_processing': True},
         'NO_WCP':   {'window_cex_processing': False},
-        'RW':       {'random_walks': DEFAULT_RANDOM_WALK},
-        'NO_RW':    {'random_walks': False},
-        'ONLY_RW':  {'random_walks': DEFAULT_RANDOM_WALK,
+
+        'RW':       {'random_steps_per_round': DEFAULT_NUM_RANDOM_STEPS},
+        'NO_RW':    {'random_steps_per_round': 0},
+        'ONLY_RW':  {'random_steps_per_round': DEFAULT_NUM_RANDOM_STEPS,
                      'glitch_processing': False,
                      'replay_glitches': False,
                      'window_cex_processing': False,
+                     'transition_coverage_steps': 0,
+                     'cex_processing': False,
+                     'discard_glitched_traces': False,
+                     'add_cex_as_hard_clauses': False,},
+
+        'TC':       {'transition_coverage_steps': DEFAULT_NUM_RANDOM_STEPS},
+        'NO_TC':    {'transition_coverage_steps': 0},
+        'ONLY_TC':  {'random_steps_per_round': 0,
+                     'glitch_processing': False,
+                     'replay_glitches': False,
+                     'window_cex_processing': False,
+                     'transition_coverage_steps': DEFAULT_NUM_RANDOM_STEPS,
                      'cex_processing': False,
                      'discard_glitched_traces': False,
                      'add_cex_as_hard_clauses': False,},
