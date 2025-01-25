@@ -129,7 +129,8 @@ def bar_chart_per_algorithm_and_oracle(results: list[dict], key: Key, stat_metho
             title=f'{pretty_key} for each algorithm and oracle ({stat_method.__name__} over results)' if title is None else title
         )
     else:
-        # alg_oracle_combos = [(a, o) for (a, o) in itertools.product(algs, eq_oracles)]
+        oracle_hatches = {oracle: hatch for oracle, hatch in
+                          zip(eq_oracles, ['', 'xx', 'o', '*', '/', '\\', '|', '-', '+',  'O', '.', ])}
 
         all_possible_vals_for_group_by_key = get_all_possible_values_for_key(results, group_by, only_if)
         group_by_val_to_list_of_values = {g: [] for g in all_possible_vals_for_group_by_key}
@@ -143,7 +144,7 @@ def bar_chart_per_algorithm_and_oracle(results: list[dict], key: Key, stat_metho
                                    and entry['algorithm_name'] == a
                                    and entry['oracle'] == o])
                 group_by_val_to_list_of_values[group_by_val].append(val)
-            alg_and_oracles.append(str((a, o)))
+            alg_and_oracles.append((a, o))
 
         label_locations = np.arange(len(alg_and_oracles))
         width = 1 / (len(all_possible_vals_for_group_by_key)+1)
@@ -153,13 +154,15 @@ def bar_chart_per_algorithm_and_oracle(results: list[dict], key: Key, stat_metho
 
         for group_by_val, list_of_values in group_by_val_to_list_of_values.items():
             offset = width * multiplier
-            rects = ax.bar(label_locations + offset, list_of_values, width, label=group_by_val)
+            rects = ax.bar(label_locations + offset, list_of_values, width,
+                           label=group_by_val,
+                           hatch=[oracle_hatches[o] for a, o in alg_and_oracles])
             ax.bar_label(rects, label_type='center', fmt='%.2f')
             multiplier += 1
 
         ax.set_ylabel(pretty_key)
         ax.set_xlabel("Algorithm/Oracle")
-        ax.set_xticks(label_locations + width, alg_and_oracles)
+        ax.set_xticks(label_locations + width, [str(ao) for ao in alg_and_oracles])
         ax.set_title(f'{pretty_key} for each algorithm and oracle ({stat_method.__name__} over results)' if title is None else title)
         ax.legend(title="Glitch Percentage")
         plt.xticks(rotation=45, ha='right')
@@ -226,6 +229,11 @@ def line_chart_per_number_of_original_states_per_alg_and_orac(results: list[dict
         for x, y in zip(x, y):
             plt.annotate(f'{y:.2f}', (x, y))
 
+    marker_per_alg = {alg: marker for alg, marker in
+                      zip(algs, ['o', '*', 'p', 'h', 'd', 'v', '8', 's', 'P', 'H', 'X', '1', '2', '3' ])}
+    line_style_per_oracle = {orac: style for orac, style in
+                             zip(oracles, ['-', ':', '-.', '--'])}
+
     for (a, o) in itertools.product(algs, oracles):
         key_per_num_states = {str(num_states): stat_method([get_val(entry, key) for entry in results
                                                             if entry['original_automaton_size'] == num_states
@@ -233,8 +241,8 @@ def line_chart_per_number_of_original_states_per_alg_and_orac(results: list[dict
                                                             and entry['oracle'] == o
                                                             and only_if(entry)])
                               for num_states in range(min_num_states, max_num_states + 1)}
-
-        line, = plt.plot(*zip(*key_per_num_states.items()), 'o-', label=str((a,o)))
+        fmt = f"{line_style_per_oracle[o]}{marker_per_alg[a]}"
+        line, = plt.plot(*zip(*key_per_num_states.items()), fmt, label=str((a,o)))
         add_labels(line)
 
     plt.xlabel("Number of states")
