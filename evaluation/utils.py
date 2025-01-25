@@ -166,7 +166,12 @@ class GlitchingSUL(SULWrapper):
                 assert len(alphabet := self.sul.automaton.get_input_alphabet()) > 1
                 while (fault_input := random.choice(alphabet)) == input:
                     pass  # don't choose the same input as fault input, otherwise the actual glitch percentage drops
-                return self.sul.step(fault_input)
+                assert fault_input != input
+                fault_output = self.sul.step(fault_input)
+                if isinstance(self.sul, TracedMooreSUL):
+                    self.traces[-1].pop(-1)
+                    self.traces[-1].append((input, fault_output))
+                return fault_output
 
             case "enter_random_state":
                 assert len(states := self.sul.automaton.states) > 1
@@ -200,6 +205,8 @@ class GlitchingSUL(SULWrapper):
         finally:
             self.glitch_percentage = prev
 
+    def __repr__(self):
+        return f"{type(self).__name__}(glitch_percentage={self.glitch_percentage}, fault_type='{self.fault_type}')"
 
 
 def dict_product(options) -> Iterable[dict]:

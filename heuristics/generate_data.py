@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 
 def _calculate_metrics(learned_model: MooreMachine, info: dict[str, Any], traces: list[Trace]) -> dict[str, float]:
     metrics = dict()
-    complete_num_steps = sum(len(trace) for trace in traces)
+    complete_num_steps = sum(len(trace[1:]) for trace in traces)  # !!!
 
     metrics["num_states"] = len(learned_model.states)
     learned_model.compute_prefixes()

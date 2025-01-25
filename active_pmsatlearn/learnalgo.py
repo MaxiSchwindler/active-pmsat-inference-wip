@@ -614,7 +614,7 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
 
 
 def get_glitch_percentage(pmsat_info, traces_used_to_learn):
-    complete_num_steps = sum(len(trace) for trace in traces_used_to_learn)
+    complete_num_steps = sum(len(trace[1:]) for trace in traces_used_to_learn)  # !!!
     percent_glitches = len(pmsat_info["glitch_steps"]) / complete_num_steps * 100
     return percent_glitches
 
