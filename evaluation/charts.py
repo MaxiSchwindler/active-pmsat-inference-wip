@@ -130,7 +130,7 @@ def bar_chart_per_algorithm_and_oracle(results: list[dict], key: Key, stat_metho
         )
     else:
         oracle_hatches = {oracle: hatch for oracle, hatch in
-                          zip(eq_oracles, ['', 'xx', 'o', '*', '/', '\\', '|', '-', '+',  'O', '.', ])}
+                          zip(eq_oracles, ['', '...', 'xx', 'o', '*', '/', '\\', '|', '-', '+',  'O', ])}
 
         all_possible_vals_for_group_by_key = get_all_possible_values_for_key(results, group_by, only_if)
         group_by_val_to_list_of_values = {g: [] for g in all_possible_vals_for_group_by_key}
