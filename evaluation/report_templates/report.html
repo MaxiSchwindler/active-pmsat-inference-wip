@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        {{ css_styles | safe }}
+    </style>
+</head>
+<body>
+    <h1>{{ title }}</h1>
+    <button id="toggleButton" data-state="deterministic" onclick="toggleStocHyp()">Show Stochastic Hypotheses</button>
+    <div class="overlay" id="imageOverlay">
+        <button class="close" onclick="closeOverlay()">X</button>
+        <img id="overlayImage" src="" alt="Hypothesis">
+    </div>
+
+    {{ sections | safe }}
+
+    <script>
+        {{ js_script | safe }}
+    </script>
+</body>
+</html>
