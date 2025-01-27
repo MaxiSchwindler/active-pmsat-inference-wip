@@ -68,7 +68,7 @@ def get_generated_automata_files_to_learn(num_automata_per_combination: int, aut
         return files
 
 
-def setup_sul(automaton: MealyMachine | MooreMachine, max_num_steps: int | None = None, glitch_percent: float = 0.0):
+def setup_sul(automaton: MealyMachine | MooreMachine, max_num_steps: int | None = None, glitch_percent: float = 0.0, glitch_mode: str = None):
     if isinstance(automaton, MooreMachine):
         sul = TracedMooreSUL(automaton)
     elif isinstance(automaton, MealyMachine):
@@ -82,7 +82,8 @@ def setup_sul(automaton: MealyMachine | MooreMachine, max_num_steps: int | None 
         sul = MaxStepsSUL(sul, max_num_steps)
 
     if glitch_percent:
-        sul = GlitchingSUL(sul, glitch_percent)
+        assert glitch_mode is not None, f"If glitch_percentage is given, glitch_mode must also be specified!"
+        sul = GlitchingSUL(sul, glitch_percentage=glitch_percent, fault_type=glitch_mode)
 
     return sul
 
@@ -255,9 +256,9 @@ def calculate_statistics(original_automaton: MooreMachine, learned_automaton: Mo
 
 
 def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: str, oracle_type: str, results_dir: str,
-                    max_num_steps: int | None = None, glitch_percent: float = 0.0, print_level: int = 0) -> dict[str, Any]:
+                    max_num_steps: int | None = None, glitch_percent: float = 0.0, glitch_mode: str = None, print_level: int = 0) -> dict[str, Any]:
     automaton = load_automaton_from_file(automaton_file, automaton_type)
-    sul = setup_sul(automaton, max_num_steps, glitch_percent)
+    sul = setup_sul(automaton, max_num_steps, glitch_percent, glitch_mode)
     oracle = oracles[oracle_type](sul)
     algorithm: AlgorithmWrapper = eval(AlgorithmWrapper.preprocess_algorithm_call(algorithm_name))
     start_time = time.time()
@@ -307,6 +308,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
 
     info["max_num_steps"] = max_num_steps
     info["glitch_percent"] = glitch_percent
+    info["glitch_mode"] = glitch_mode
 
     info["automaton_type"] = automaton_type
     info["original_automaton"] = automaton_file
@@ -324,26 +326,36 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     return info
 
 
-def learn_automaton_wrapper(args: tuple):
-    return learn_automaton(*args)
+def learn_automaton_wrapper(kwargs: dict):
+    return learn_automaton(**kwargs)
 
 
 @timeit("Learning automata")
 def learn_automata(automata_type: str, automata_files: list[str],
                    algorithm_names: Sequence[str], oracle_types: Sequence[str], results_dir: str,
                    learn_num_times: int = 5, max_num_steps: int | None = None,
-                   glitch_percents: list[float] = None, print_level: int = 0):
+                   glitch_percents: list[float] = None, glitch_modes: list[str] = None, print_level: int = 0):
     if not glitch_percents:
         glitch_percents = [0.0]
+    if not glitch_modes:
+        glitch_modes = [None]
 
     all_combinations = [
-        (automata_type, automata_file, algorithm_name, oracle_type, results_dir, max_num_steps, glitch_percent, print_level)
-        for (automata_file, algorithm_name, oracle_type, glitch_percent)
-        in itertools.product(automata_files, algorithm_names, oracle_types, glitch_percents)
+        dict(automaton_type=automata_type,
+             automaton_file=automata_file,
+             algorithm_name=algorithm_name,
+             oracle_type=oracle_type,
+             results_dir=results_dir,
+             max_num_steps=max_num_steps,
+             glitch_percent=glitch_percent,
+             glitch_mode=glitch_mode,
+             print_level=print_level)
+        for (automata_file, algorithm_name, oracle_type, glitch_percent, glitch_mode)
+        in itertools.product(automata_files, algorithm_names, oracle_types, glitch_percents, glitch_modes)
     ]
 
     logger.info(f"Learning automata in {len(all_combinations)} unique constellations "
-                f"(algorithms: {algorithm_names} | oracles: {oracle_types} | {len(automata_files)} files | {len(glitch_percents)} unique glitch percents). "
+                f"(algorithms: {algorithm_names} | oracles: {oracle_types} | {len(automata_files)} files | glitch percents: {glitch_percents} | glitch modes: {glitch_modes}). "
                 f"Each constellation is learned {learn_num_times} times.")
 
     all_combinations_n_times = [c for c in all_combinations for _ in range(learn_num_times)]
@@ -386,6 +398,9 @@ def main():
     parser.add_argument('--glitch_percent', type=float, nargs="+",
                         help='How many percent of steps in the SUL glitch (currently, only fault_mode="send_random_input" is supported). '
                              'You can specify multiple glitch percent at once.')
+    parser.add_argument('--glitch_mode', type=str, nargs="+", choices=GlitchingSUL.FAULT_TYPES,
+                        help='How the SUL glitches. '
+                             'You can specify multiple glitch modes at once.')
     parser.add_argument('--learn_all_automata_from_dir', type=str,
                         help='Learn all automata from a directory. If this directory is specified, '
                              'all arguments concerning automata generation except -t are ignored. '
@@ -417,7 +432,7 @@ def main():
 
     set_current_process_name(os.path.basename(__file__))
     learn_automata(args.type, files_to_learn, args.algorithms, args.oracles, results_dir,
-                   args.learn_num_times, max_num_steps, args.glitch_percent, args.print_level)
+                   args.learn_num_times, max_num_steps, args.glitch_percent, args.glitch_mode, args.print_level)
 
 if __name__ == '__main__':
     main()

@@ -208,6 +208,7 @@ def run_activePmSATLearn(
                                           )
         assert not any((info["timed_out"] or (h is None)) for h, h_s, info in hypotheses.values()), "Sliding window should not contained timed-out hypotheses"
         traces_used_to_learn = copy.deepcopy(traces)
+        detailed_learning_info[learning_rounds]["traces_used_to_learn"] = traces_used_to_learn
 
         if len(hypotheses) != sliding_window_size:
             # if we have a timeout during learning of the sliding window, no further hypotheses will be learned;
@@ -531,7 +532,7 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
         else:
             logger.debug(
                 f"Should move start of sliding window to {min_num_states} states to position peak at the midpoint, "
-                f"but there are too many outputs in the traces ({num_outputs}); setting min_num_states to {num_outputs}")
+                f"but there are too many outputs in the traces ({min_allowed_num_states}); setting min_num_states to {min_allowed_num_states}")
             min_num_states = min_allowed_num_states
 
         return Continue(next_min_num_states=min_num_states, **continue_kwargs)
@@ -724,10 +725,10 @@ def do_replay_glitches(hyps: HypothesesWindow, traces_used_to_learn: list[Trace]
 
 
 def do_transition_coverage(hyp: SupportedAutomaton, num_steps: int, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
-    logger.debug(f"Performing {num_steps} for transition coverage")
-    hyp_sul = TracedMooreSUL(hyp)
+    logger.debug(f"Performing {num_steps} for transition coverage")  #Problem: if there are states with prefix None, generate_prefix_steps in line 124 fails
+    hyp_sul = TracedMooreSUL(mm=MooreMachine(initial_state=hyp.initial_state, states=[s for s in hyp.states if s.prefix is not None]))
     oracle = KWayTransitionCoverageEqOracle(alphabet=alphabet, sul=hyp_sul, max_number_of_steps=num_steps)
-    oracle.find_cex(hyp)
+    oracle.find_cex(MooreMachine(initial_state=hyp.initial_state, states=[s for s in hyp.states if s.prefix is not None]))
     assert hyp_sul.num_steps <= num_steps
 
     new_traces = []

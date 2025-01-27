@@ -128,6 +128,9 @@ class SULWrapper(SUL):
     def __getattr__(self, item):
         return getattr(self.sul, item)
 
+    # def __setattr__(self, key, value):
+    #     setattr(self.sul, key, value)
+
 
 class MaxStepsSUL(SULWrapper):
     """ Restricts the wrapped SUL to max_num_steps. After reaching this threshold, a MaxStepsReached exception is raised. """
@@ -143,6 +146,9 @@ class MaxStepsSUL(SULWrapper):
 
 class GlitchingSUL(SULWrapper):
     """ Makes the wrapped SUL glitch a certain percentage of the time"""
+
+    FAULT_TYPES = ("enter_random_state", )
+
     def __init__(self,
                  sul: TracedMooreSUL | MooreSUL,
                  glitch_percentage: float,
@@ -175,12 +181,13 @@ class GlitchingSUL(SULWrapper):
 
             case "enter_random_state":
                 assert len(states := self.sul.automaton.states) > 1
-                while (fault_state := random.choice(states)) == self.sul.automaton.current_state:
+                while (fault_state := random.choice(states)) == self.sul.automaton.current_state.transitions[input]:
                     pass
                 fault_output = fault_state.output
-                self.sul.current_state = fault_state
+                self.sul.automaton.current_state = fault_state
                 if isinstance(self.sul, TracedMooreSUL):
                     self.traces[-1].append((input, fault_output))
+                # self.sul.num_steps += 1  # already done in sul.query with len(word)
                 return fault_output
 
             case "discard_io_tuple":
