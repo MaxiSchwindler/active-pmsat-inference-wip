@@ -2,18 +2,9 @@ import json
 import os
 import webbrowser
 from pathlib import Path
-
 import pydot
-
-from evaluation.utils import new_file
-
-
-import json
-import os
-import webbrowser
-from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
-import pydot
+import argparse
 
 from evaluation.utils import new_file
 
@@ -23,14 +14,18 @@ class HTMLReport:
     MODEL_CLASS = "model"
     ROUND_CLASS = "round"
 
-    def __init__(self, title="Report", output_dir="reports", filename="report.html"):
+    def __init__(self, data_path: str, title="Report", output_dir="reports", filename="report.html", log_file=None,
+                 original_automaton_file=None):
+        """Initialize the report, automatically loads data from the provided data_path."""
         self.title = title
+        self.data_path = Path(data_path)
         self.output_dir = Path(new_file(Path(output_dir) / title))
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(self.output_dir / "img", exist_ok=False)
-        self.filename = filename
+        self.filename = self.output_dir / filename
         self.sections = []  # To store content for different sections
-        os.makedirs(self.output_dir, exist_ok=True)
+        self.log_file = log_file
+        self.original_automaton = original_automaton_file
 
         # Set up Jinja2 environment
         self.env = Environment(
@@ -40,6 +35,20 @@ class HTMLReport:
         self.html_template = self.env.get_template("report.html")
         self.js_template = self.env.get_template("script.js")
         self.css_template = self.env.get_template("style.css")
+
+        self._load_data()
+        # Add rounds to the report
+        for round_name, round_data in self.data["detailed_learning_info"].items():
+            self.add_learning_round(round_name, round_data)
+        self.save()
+
+    def _load_data(self):
+        """Loads the data from the provided file path."""
+        if not self.data_path.exists():
+            raise FileNotFoundError(f"{self.data_path.as_posix()} does not exist.")
+
+        with open(self.data_path, "r") as file:
+            self.data = json.load(file)
 
     def _generate_full_html(self):
         """Returns the full HTML with all sections."""
@@ -77,17 +86,19 @@ class HTMLReport:
         expandable_html += "</div></div>"
         return expandable_html
 
-    def _generate_hypothesis_html(self, num_states: str, round_name: str, hyp_img: str, hyp_stoc_img: str, score: float, is_best: bool,
+    def _generate_hypothesis_html(self, num_states: str, round_name: str, hyp_img: str, hyp_stoc_img: str, score: float,
+                                  is_best: bool,
                                   always_show_info: dict, detailed_info: dict):
         cls = f"{self.MODEL_CLASS} {self.BEST_CLASS if is_best else ''}"
         html = f'<div class="{cls}">'
         html += f'<h3>{num_states} states</h3>'
-        html += f'<img src="{hyp_img}" alt="{num_states}-state hypothesis" class="hyp" style="display: block;">'
-        html += f'<img src="{hyp_stoc_img}" alt="{num_states}-state hypothesis (stochastic)" class="hyp_stoc" style="display: none;">'
+        html += f'<img src="{hyp_img}" alt="{num_states}-state hypothesis" class="hyp" style="display: none;">'
+        html += f'<img src="{hyp_stoc_img}" alt="{num_states}-state hypothesis (stochastic)" class="hyp_stoc" style="display: block;">'
         for key, val in always_show_info.items():
             html += f'<p>{key}: {val}</p>'
         if detailed_info:
-            html += self._generate_expandable_info("Additional Details", round_name=round_name, num_states=num_states, info=detailed_info)
+            html += self._generate_expandable_info("Additional Details", round_name=round_name, num_states=num_states,
+                                                   info=detailed_info)
         html += "</div>"
         return html
 
@@ -158,34 +169,27 @@ class HTMLReport:
 
     def save(self, open_automatically=True):
         html_content = self._generate_full_html()
-        file_path = self.output_dir / self.filename
-        with open(file_path, "w") as f:
+        with open(self.filename, "w") as f:
             f.write(html_content)
 
-        if open_automatically:
-            webbrowser.open(f"file://{file_path.as_posix()}")
+    def open(self):
+        webbrowser.open(f"file://{self.filename.as_posix()}")
 
 
 def main():
-    # data_path = Path(r"C:\private\Uni\MastersThesis\active-pmsat-inference-wip\learning_results_143\2025-01-27_03-12-35_learning_results_MooreMachine_5States_3Inputs_3Outputs_03b9d56c7ad14407ad5b30abf2263612.dot_APMSL()_5ddf5579.json")
-    data_path = Path(r"C:\private\Uni\MastersThesis\active-pmsat-inference-wip\2025-01-27_16-52-57_learning_results_coffeemachine_moore.dot.json")
-    if not data_path.exists():
-        raise FileNotFoundError(data_path.as_posix())
+    """Command-line entry point."""
+    parser = argparse.ArgumentParser(description="Generate an HTML report from learning data.")
+    parser.add_argument("data_path", type=str, help="Path to the learning data JSON file.")
+    parser.add_argument("--title", type=str, default="Learning Report", help="Title of the report.")
+    parser.add_argument("--output_dir", type=str, default="reports", help="Directory to save the report.")
+    parser.add_argument("--filename", type=str, default="report.html", help="Filename for the report.")
+    parser.add_argument("--open", type=bool, default=True, help="Open automatically")
 
-    with open(data_path, "r") as file:
-        data = json.load(file)
+    args = parser.parse_args()
 
-    # Create the report
-    report = HTMLReport(title="Learning Rounds Report")
-
-    # report.visualize_original_automaton(data["original_automaton"])
-
-    # Add rounds to the report
-    for round_name, round_data in data["detailed_learning_info"].items():
-        report.add_learning_round(round_name, round_data)
-
-    # Save the report
-    report.save()
+    report = HTMLReport(args.data_path, args.title, args.output_dir, args.filename)
+    if args.open:
+        report.open()
 
 
 if __name__ == "__main__":
