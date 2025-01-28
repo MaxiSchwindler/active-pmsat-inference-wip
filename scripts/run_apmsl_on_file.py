@@ -16,6 +16,7 @@ from active_pmsatlearn.defs import *
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from evaluation.defs import oracles
 from evaluation.learn_automata import setup_sul, calculate_statistics
+from evaluation.utils import new_file
 
 
 def get_sul_from_file(file: str, glitch_percent: float = 0):
@@ -140,16 +141,18 @@ def main():
         print(f"{args.file} is not a .dot file")
         exit(3)
 
-    learned_model, info, results_file = learn_file(args.file, args.glitch_percent, args.oracle, args.log_file)
+    log_file = new_file(args.log_file)
+
+    learned_model, info, results_file = learn_file(args.file, args.glitch_percent, args.oracle, log_file)
     if args.create_report:
 
         report = evaluation.visualize_run.HTMLReport(
             results_file,
-            title="Report for {os.path.basename(args.file)}",
+            title=f"Report for {os.path.basename(args.file)}",
             output_dir="reports",
             filename="report.html",
             original_automaton_file=args.file,
-            log_file=args.log_file,
+            log_file=log_file,
         )
         report.open()
 

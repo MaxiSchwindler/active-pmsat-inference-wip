@@ -47,37 +47,33 @@ def test_glitching_sul(mm: MooreMachine, percent_glitches: float, traced: bool, 
     num_glitches = 0
     for input_combination in all_input_combinations:
         mm.reset_to_initial()
-        sul.automaton.reset_to_initial()
+        sul.pre()  # needed to set up new trace in TracedMooreSUL -> usually called from query()
         assert sul.automaton.current_state == mm.current_state == mm.initial_state
-
         for i in input_combination:
             mm_out = mm.step(i)
             mm_state = mm.current_state
             sul_out = sul.step(i)
             sul_state = sul.automaton.current_state
 
-            if fault_mode == "send_random_input":
-                is_glitched = sul.num_glitched_steps > num_glitches
-                if is_glitched:
-                    assert sul.num_glitched_steps == num_glitches + 1
-            elif fault_mode == "enter_random_state":
-                is_glitched = mm_state != sul_state
-            else:
-                assert False
-
-            if is_glitched:
+            if mm_state != sul_state:
                 num_glitches += 1
                 mm.current_state = sul_state
 
             if traced:
                 assert sul.traces[-1][-1] == (i, sul_out)
+                assert sul.current_trace[-1] == (i, sul_out)
+
+        if traced:
+            assert len(sul.traces[-1][1:]) == len(input_combination)
+            assert tuple(i for i, o in sul.traces[-1][1:]) == tuple(input_combination)
+            assert tuple(i for i, o in sul.current_trace[1:]) == tuple(input_combination)
 
     # assert sul.num_steps == total_num_steps  # since we always do manual .step() in this test, num_steps is always zero (because only .query() increases it)
     assert num_glitches == sul.num_glitched_steps
-    # assert expected_num_glitches - 1 <= num_glitches <= expected_num_glitches + 1
     actual_percentage_glitches = num_glitches / total_num_steps * 100
     if percent_glitches == 0.0:
         assert actual_percentage_glitches == 0
     else:
+        assert percent_glitches - 0.1 <= actual_percentage_glitches <= percent_glitches + 0.1
         assert np.isclose(actual_percentage_glitches, percent_glitches, atol=0.05, rtol=0.01)
 

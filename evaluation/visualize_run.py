@@ -2,11 +2,14 @@ import json
 import os
 import webbrowser
 from pathlib import Path
+
+import aalpy.utils
 import pydot
 from jinja2 import Environment, FileSystemLoader
 import argparse
 
 from evaluation.utils import new_file
+from f_similarity import f_score
 
 
 class HTMLReport:
@@ -24,10 +27,17 @@ class HTMLReport:
         os.makedirs(self.output_dir / "img", exist_ok=False)
         self.filename = self.output_dir / filename
         self.sections = []  # To store content for different sections
-        self.log_file = log_file
-        with open(self.log_file, "r") as f:
-            self.logs = f.readlines()
-        self.original_automaton = original_automaton_file
+
+        if log_file is not None:
+            with open(log_file, "r") as f:
+                self.logs = f.readlines()
+        else:
+            self.logs = []
+
+        if original_automaton_file is not None:
+            self.original_automaton = aalpy.utils.load_automaton_from_file(original_automaton_file, "moore")
+        else:
+            self.original_automaton = None
 
         # Set up Jinja2 environment
         self.env = Environment(
@@ -105,8 +115,9 @@ class HTMLReport:
         return html
 
     def _get_logs_of_round(self, round_name: str | None):
-        if self.log_file is None:
+        if not self.logs:
             return []
+
         round = int(round_name or 0)
 
         start_index = None
@@ -152,7 +163,7 @@ class HTMLReport:
         if "traces_used_to_learn" in data:
             round_html += self._add_expandible_traces("traces_used_to_learn", round_name, data["traces_used_to_learn"])
 
-        if self.log_file:
+        if self.logs:
             round_html += self._generate_expandible_log(round_name)
 
         round_html += '<div class="models">'
@@ -174,6 +185,8 @@ class HTMLReport:
             if score is not None:
                 hyp_info["Score"] = score
             hyp_info["Glitch Percentage"] = f'{data["pmsat_info"][num_states]["percent_glitches"]:.2f}%'
+            if self.original_automaton is not None:
+                hyp_info["[META] F-Score with original"] = f"{f_score(self.original_automaton, aalpy.utils.FileHandler.load_automaton_from_string(hyp, 'moore')):.2f}"  # not (yet?) merged into aalpy
 
             hyp_detail_info = dict()
             hyp_detail_info["glitch_trans"] = data["pmsat_info"][num_states]["glitch_trans"]
@@ -209,7 +222,7 @@ class HTMLReport:
         html += f"</div>"
         return html
 
-    def save(self, open_automatically=True):
+    def save(self):
         html_content = self._generate_full_html()
         with open(self.filename, "w") as f:
             f.write(html_content)
