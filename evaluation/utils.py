@@ -152,9 +152,10 @@ class GlitchingSUL(SULWrapper):
     def __init__(self,
                  sul: TracedMooreSUL | MooreSUL,
                  glitch_percentage: float,
-                 fault_type: Literal["send_random_input", "enter_random_state", "discard_io_tuple"] = 'send_random_input'):
+                 fault_type: str = 'enter_random_state'):
         super().__init__(sul)
         self.glitch_percentage = glitch_percentage
+        assert fault_type in self.FAULT_TYPES
         self.fault_type = fault_type
         self.num_glitched_steps = 0
 
@@ -167,41 +168,18 @@ class GlitchingSUL(SULWrapper):
             return self.sul.step(input)
 
         self.num_glitched_steps += 1
-        match self.fault_type:
-            case "send_random_input":
-                assert len(alphabet := self.sul.automaton.get_input_alphabet()) > 1
-                while (fault_input := random.choice(alphabet)) == input:
-                    pass  # don't choose the same input as fault input, otherwise the actual glitch percentage drops
-                assert fault_input != input
-                fault_output = self.sul.step(fault_input)
-                if isinstance(self.sul, TracedMooreSUL):
-                    self.traces[-1].pop(-1)
-                    self.traces[-1].append((input, fault_output))
-                return fault_output
-
-            case "enter_random_state":
-                assert len(states := self.sul.automaton.states) > 1
-                while (fault_state := random.choice(states)) == self.sul.automaton.current_state.transitions[input]:
-                    pass
-                fault_output = fault_state.output
-                self.sul.automaton.current_state = fault_state
-                if isinstance(self.sul, TracedMooreSUL):
-                    self.traces[-1].append((input, fault_output))
-                # self.sul.num_steps += 1  # already done in sul.query with len(word)
-                return fault_output
-
-            case "discard_io_tuple":
-                # this fault mode probably does not make a lot of sense in an active context...
-                # since the algorithm knows what inputs were sent, losing an entire (i,o) doesn't make much sense.
-                assert isinstance(self.sul, TracedMooreSUL), ("SUL must be traced, and all outputs must be "
-                                                              "received via .traces or .current_trace for "
-                                                              "glitching with fault_mode 'discard_io_tuple' to work.")
-                output = self.sul.step(input)
-                self.traces[-1].pop()
-                return output
-
-            case _other:
-                raise TypeError(f"Unsupported fault type '{_other}'")
+        if self.fault_type == "enter_random_state":
+            assert len(states := self.sul.automaton.states) > 1
+            while (fault_state := random.choice(states)) == self.sul.automaton.current_state.transitions[input]:
+                pass
+            fault_output = fault_state.output
+            self.sul.automaton.current_state = fault_state
+            if isinstance(self.sul, TracedMooreSUL):
+                self.traces[-1].append((input, fault_output))
+            # self.sul.num_steps += 1  # already done in sul.query with len(word)
+            return fault_output
+        else:
+            raise TypeError(f"Unsupported fault type '{self.fault_type}'")
 
     @contextmanager
     def dont_glitch(self):
@@ -381,3 +359,35 @@ def print_results_info(results: list[dict]):
             print("\t\t\t", f"occurred every time with {a}")
 
         print("\t\t", f"occurred in {len(unique_algorithms)} unique algorithms: {unique_algorithms}")
+
+
+def print_results_info_per_alg(results: list[dict], exclude_results_with_eq_oracle=False):
+    def sep():
+        print("-" * 40)
+
+    algorithms = sorted(list(set([entry["algorithm_name"] for entry in results])))
+    valid_results = [result for result in results if "exception" not in result]
+    if exclude_results_with_eq_oracle:
+        valid_results = [result for result in valid_results if result["oracle"] in ("None", None)]
+
+    sep()
+    print("ALGORITHM RESULTS")
+    sep()
+
+    for algorithm in algorithms:
+        print(f"  {algorithm}")
+        alg_results = [result for result in valid_results if result["algorithm_name"] == algorithm]
+
+        print("    Overall Statistics:")
+        for stat in ["learned_correctly", "Precision", "Recall", "F-Score", "Precision (all traces)",]:
+            val = np.mean([r[stat] for r in alg_results])
+            print(f"      {stat}: {val:.2f}")
+
+        print("    Per Glitch Percentage:")
+        for glitch_percent in sorted(list(set(r["glitch_percent"] for r in alg_results))):
+            glitch_results = [result for result in alg_results if result["glitch_percent"] == glitch_percent]
+            print(f"      {glitch_percent}%: ")
+            for stat in ["learned_correctly", "Precision", "Recall", "F-Score", "Precision (all traces)",]:
+                val = np.mean([r[stat] for r in glitch_results])
+                print(f"        {stat}: {val:.2f}")
+        sep()

@@ -29,12 +29,16 @@ def trace_query(sul: SUL, inputs: Sequence[Input]) -> Trace:
     Returns traces as tuples of tuples, to enable hashability and immutability."""
     if hasattr(sul, "traces"):  # TracedMooreSUL
         sul.query(inputs)
-        return tuple(sul.traces[-1])
+        retval = tuple(sul.traces[-1])
     else:
         initial_output: Output = sul.query(tuple())[0]
         outputs: list[Output] = sul.query(inputs)
-        return initial_output, *zip(inputs, outputs)
+        retval = initial_output, *zip(inputs, outputs)
 
+    for given_input, returned_input in zip(inputs, [i for i, o in retval[1:]]):
+        assert given_input == returned_input, f"Mismatch between given and received inputs: {given_input} != {returned_input}.\n {inputs=} | {retval=} | {sul=}"
+
+    return retval
 
 def get_input_from_stoc_trans(inp: str):
     if inp.startswith("!"):
