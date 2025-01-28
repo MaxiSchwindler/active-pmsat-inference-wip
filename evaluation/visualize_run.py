@@ -25,6 +25,8 @@ class HTMLReport:
         self.filename = self.output_dir / filename
         self.sections = []  # To store content for different sections
         self.log_file = log_file
+        with open(self.log_file, "r") as f:
+            self.logs = f.readlines()
         self.original_automaton = original_automaton_file
 
         # Set up Jinja2 environment
@@ -39,7 +41,7 @@ class HTMLReport:
         self._load_data()
         # Add rounds to the report
         for round_name, round_data in self.data["detailed_learning_info"].items():
-            self.add_learning_round(round_name, round_data)
+            self._generate_learning_round_html(round_name, round_data)
         self.save()
 
     def _load_data(self):
@@ -102,7 +104,44 @@ class HTMLReport:
         html += "</div>"
         return html
 
-    def add_learning_round(self, round_name: str, data: dict):
+    def _get_logs_of_round(self, round_name: str | None):
+        if self.log_file is None:
+            return []
+        round = int(round_name or 0)
+
+        start_index = None
+        end_index = None
+        for i, msg in enumerate(self.logs):
+            if f"Starting learning round {round}" in msg:
+                start_index = i
+            if f"Starting learning round {round + 1}" in msg:
+                assert start_index is not None
+                end_index = i
+                break
+
+        return self.logs[start_index:end_index]
+
+
+    def _generate_expandible_log(self, round_name: str):
+        expandable_id = f"log_expandable_{round_name}"
+
+        # Create a content string for all key-value pairs
+        expandable_html = f"""
+                <div class="expandable">
+                    <div class="expandable-header" onclick="toggleExpandable('{expandable_id}')">
+                        <span>Log</span>
+                    </div>
+                    <div class="expandable-content" id="{expandable_id}" style="display: none;">
+                """
+
+        # Add each key-value pair to the expandable content
+        for msg in self._get_logs_of_round(round_name):
+            expandable_html += f'<p>{msg}</p>'
+
+        expandable_html += "</div></div>"
+        return expandable_html
+
+    def _generate_learning_round_html(self, round_name: str, data: dict):
         """Adds a visualization of a single learning round to the report."""
         hyps = data["hyp"]
         hyps_stoc = data["hyp_stoc"]
@@ -112,6 +151,9 @@ class HTMLReport:
 
         if "traces_used_to_learn" in data:
             round_html += self._add_expandible_traces("traces_used_to_learn", round_name, data["traces_used_to_learn"])
+
+        if self.log_file:
+            round_html += self._generate_expandible_log(round_name)
 
         round_html += '<div class="models">'
         for num_states, hyp in hyps.items():
@@ -183,11 +225,16 @@ def main():
     parser.add_argument("--title", type=str, default="Learning Report", help="Title of the report.")
     parser.add_argument("--output_dir", type=str, default="reports", help="Directory to save the report.")
     parser.add_argument("--filename", type=str, default="report.html", help="Filename for the report.")
+    parser.add_argument("--log-file", type=str, default=None, help="Log file")
     parser.add_argument("--open", type=bool, default=True, help="Open automatically")
 
     args = parser.parse_args()
 
-    report = HTMLReport(args.data_path, args.title, args.output_dir, args.filename)
+    report = HTMLReport(data_path=args.data_path,
+                        title=args.title,
+                        output_dir=args.output_dir,
+                        filename=args.filename,
+                        log_file=args.log_file)
     if args.open:
         report.open()
 
