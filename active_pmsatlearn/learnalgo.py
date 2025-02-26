@@ -32,6 +32,8 @@ def run_activePmSATLearn(
     extension_length: int = 2,
     heuristic_function: str | HeuristicFunction = "intermediary",
     timeout: float | None = None,
+    deduplicate_traces: bool = True,
+    only_replay_peak_glitches: bool = False,
 
     # pmsat args
     pm_strategy: Literal["lsu", "fm", "rc2"] = "rc2",
@@ -237,7 +239,8 @@ def run_activePmSATLearn(
             preprocessing_additional_traces = do_input_completeness_preprocessing(hyps=hypotheses, suffix_mode=input_completeness_preprocessing,
                                                                                   **common_processing_kwargs)
 
-            remove_duplicate_traces(traces, preprocessing_additional_traces)  # TODO: does de-duplication affect anything? check!
+            if deduplicate_traces:
+                remove_duplicate_traces(traces, preprocessing_additional_traces)  # TODO: does de-duplication affect anything? check!
             log_and_store_additional_traces(preprocessing_additional_traces, detailed_learning_info[learning_rounds],
                                             "input completeness", processing_step="pre")
 
@@ -295,7 +298,8 @@ def run_activePmSATLearn(
                                                                            traces_used_to_learn_hyp=traces_used_to_learn,
                                                                            **common_processing_kwargs)
 
-            remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)  # TODO: does de-duplication affect anything? check!
+            if deduplicate_traces:
+                remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)  # TODO: does de-duplication affect anything? check!
             log_and_store_additional_traces(postprocessing_additional_traces_glitch, detailed_learning_info[learning_rounds], "glitch")
 
             traces = traces + postprocessing_additional_traces_glitch
@@ -303,18 +307,26 @@ def run_activePmSATLearn(
         if window_cex_processing:
             postprocessing_additional_traces_window_cex = do_window_counterexample_processing(hypotheses, **common_processing_kwargs)
 
-            remove_duplicate_traces(traces, postprocessing_additional_traces_window_cex)
+            if deduplicate_traces:
+                remove_duplicate_traces(traces, postprocessing_additional_traces_window_cex)
             log_and_store_additional_traces(postprocessing_additional_traces_window_cex, detailed_learning_info[learning_rounds], "window cex")
 
             traces = traces + postprocessing_additional_traces_window_cex
 
         if replay_glitches:
-            postprocessing_additional_traces_replay = do_replay_glitches(hyps=hypotheses,
+            if only_replay_peak_glitches:
+                peak_index = find_index_of_absolute_peak(scores)
+                peak_num_states = get_num_states_from_scores_index(scores, peak_index)
+                fake_hyp_window = {peak_num_states: hypotheses[peak_num_states]}  # used to only replay glitches of peak
+            else:
+                fake_hyp_window = hypotheses
+            postprocessing_additional_traces_replay = do_replay_glitches(hyps=fake_hyp_window,
                                                                          traces_used_to_learn=traces_used_to_learn,
                                                                          suffix_modes=replay_glitches,
                                                                          **common_processing_kwargs)
 
-            remove_duplicate_traces(traces, postprocessing_additional_traces_replay)
+            if deduplicate_traces:
+                remove_duplicate_traces(traces, postprocessing_additional_traces_replay)
             log_and_store_additional_traces(postprocessing_additional_traces_replay, detailed_learning_info[learning_rounds], "replay")
 
             traces = traces + postprocessing_additional_traces_replay
@@ -322,7 +334,8 @@ def run_activePmSATLearn(
         if random_steps_per_round:
             postprocessing_additional_traces_random_walks = do_random_walks(random_steps_per_round, **common_processing_kwargs)
 
-            remove_duplicate_traces(traces, postprocessing_additional_traces_random_walks)  # TODO: does de-duplication affect anything? check!
+            if deduplicate_traces:
+                remove_duplicate_traces(traces, postprocessing_additional_traces_random_walks)  # TODO: does de-duplication affect anything? check!
             log_and_store_additional_traces(postprocessing_additional_traces_random_walks, detailed_learning_info[learning_rounds], "random walks")
 
             traces = traces + postprocessing_additional_traces_random_walks
@@ -331,7 +344,8 @@ def run_activePmSATLearn(
             peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
             postprocessing_additional_traces_state_coverage = do_transition_coverage(peak_hyp, transition_coverage_steps, **common_processing_kwargs)
 
-            remove_duplicate_traces(traces, postprocessing_additional_traces_state_coverage)
+            if deduplicate_traces:
+                remove_duplicate_traces(traces, postprocessing_additional_traces_state_coverage)
             log_and_store_additional_traces(postprocessing_additional_traces_state_coverage, detailed_learning_info[learning_rounds], "transition coverage")
 
             traces = traces + postprocessing_additional_traces_state_coverage
@@ -347,7 +361,8 @@ def run_activePmSATLearn(
             if cex_processing:
                 postprocessing_additional_traces_cex = do_cex_processing(eq_oracle_cex, **common_processing_kwargs)
 
-                remove_duplicate_traces(traces, postprocessing_additional_traces_cex)
+                if deduplicate_traces:
+                    remove_duplicate_traces(traces, postprocessing_additional_traces_cex)
                 log_and_store_additional_traces(postprocessing_additional_traces_cex, detailed_learning_info[learning_rounds], "cex")
 
                 traces = traces + postprocessing_additional_traces_cex
