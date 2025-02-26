@@ -79,6 +79,8 @@ def setup_sul(automaton: MealyMachine | MooreMachine, max_num_steps: int | None 
         raise TypeError("Invalid automaton type")
 
     if max_num_steps is not None:
+        if glitch_percent:
+            raise NotImplementedError("Due to the isinstance-check for TracedMooreSUL in GlitchingSUL, max_num_steps and glitch_percent can currently not be specified simultaneously")
         sul = MaxStepsSUL(sul, max_num_steps)
 
     if glitch_percent:
@@ -288,6 +290,9 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
         info = {'exception': repr(e)}
         import traceback
         logger.warning(f"Unknown exception during algorithm call:\n {traceback.format_exc()}")
+
+    info["sul_transitions"] = getattr(sul, "taken_transitions", None)  # retrieve before check_equal, since this does steps in the sul
+    info["sul_num_glitched_steps"] = getattr(sul, "num_glitched_steps", 0)
 
     learned_correctly = check_equal(sul, learned_model)
     if not learned_correctly:

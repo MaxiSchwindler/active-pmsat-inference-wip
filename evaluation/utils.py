@@ -94,6 +94,14 @@ class TracedMooreSUL(MooreSUL):
         self.current_trace = [self.automaton.step(None)]
         self.traces = [self.current_trace]
 
+        self.taken_transitions = {}
+        for s1 in mm.states:
+            self.taken_transitions[s1.state_id] = {}
+            for letter in mm.get_input_alphabet():
+                self.taken_transitions[s1.state_id][letter] = {}
+                for s2 in mm.states:
+                    self.taken_transitions[s1.state_id][letter][s2.state_id] = 0
+
     def pre(self):
         super().pre()
         assert self.automaton.current_state == self.automaton.initial_state
@@ -103,12 +111,24 @@ class TracedMooreSUL(MooreSUL):
             self.current_trace = new_trace
 
     def step(self, letter=None):
+        old_state = self.automaton.current_state
         output = super().step(letter)
+        current_state = self.automaton.current_state
         if letter is None:
             return output
         entry = (letter, output)
         self.traces[-1].append(entry)
+        self.taken_transitions[old_state.state_id][letter][current_state.state_id] += 1
         return output
+
+    @staticmethod
+    def flatten_transitions_dict(transitions: dict[str, dict[str, dict[str, int]]]) -> dict[tuple[str, str, str], int]:
+        transitions_as_tuple_dict = {}
+        for s1 in transitions:
+            for l in transitions[s1]:
+                for s2 in transitions[s1][l]:
+                    transitions_as_tuple_dict[(s1, l, s2)] = transitions[s1][l][s2]
+        return transitions_as_tuple_dict
 
 
 class SULWrapper(SUL):
@@ -139,6 +159,7 @@ class MaxStepsSUL(SULWrapper):
         self.max_num_steps = max_num_steps
 
     def step(self, letter):
+        # TODO: i think num_steps is only increased in query for some reason, so this won't work during a query
         if self.sul.num_steps >= self.max_num_steps:
             raise MaxStepsReached
         return self.sul.step(letter)
@@ -170,12 +191,14 @@ class GlitchingSUL(SULWrapper):
         self.num_glitched_steps += 1
         if self.fault_type == "enter_random_state":
             assert len(states := self.sul.automaton.states) > 1
-            while (fault_state := random.choice(states)) == self.sul.automaton.current_state.transitions[input]:
+            current_state = self.sul.automaton.current_state
+            while (wrong_next_state := random.choice(states)) == current_state.transitions[input]:
                 pass
-            fault_output = fault_state.output
-            self.sul.automaton.current_state = fault_state
+            fault_output = wrong_next_state.output
             if isinstance(self.sul, TracedMooreSUL):
                 self.traces[-1].append((input, fault_output))
+                self.taken_transitions[current_state.state_id][input][wrong_next_state.state_id] += 1
+            self.sul.automaton.current_state = wrong_next_state
             # self.sul.num_steps += 1  # already done in sul.query with len(word)
             return fault_output
         else:
