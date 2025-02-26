@@ -7,6 +7,7 @@ from functools import cmp_to_key
 from typing import TypeAlias, Any
 
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import numpy as np
 
 from active_pmsatlearn.learnalgo import get_total_num_additional_traces
@@ -41,6 +42,7 @@ def load_results(results_dir: str) -> list[dict]:
             continue
         with open(os.path.join(results_dir, filename), "r") as f:
             results.append(json.load(f))
+        results[-1]["results_file"] = filename
     return results
 
 
@@ -231,6 +233,8 @@ def line_chart_per_number_of_original_states_per_alg_and_orac(results: list[dict
 
     marker_per_alg = {alg: marker for alg, marker in
                       zip(algs, ['o', '*', 'p', 'h', 'd', 'v', '8', 's', 'P', 'H', 'X', '1', '2', '3' ])}
+    color_per_alg =  {alg: color for alg, color in
+                      zip(algs, mcolors.TABLEAU_COLORS)}
     line_style_per_oracle = {orac: style for orac, style in
                              zip(oracles, ['-', ':', '-.', '--'])}
 
@@ -242,7 +246,8 @@ def line_chart_per_number_of_original_states_per_alg_and_orac(results: list[dict
                                                             and only_if(entry)])
                               for num_states in range(min_num_states, max_num_states + 1)}
         fmt = f"{line_style_per_oracle[o]}{marker_per_alg[a]}"
-        line, = plt.plot(*zip(*key_per_num_states.items()), fmt, label=str((a,o)))
+        color = color_per_alg[a]
+        line, = plt.plot(*zip(*key_per_num_states.items()), fmt, label=str((a,o)), color=color)
         add_labels(line)
 
     plt.xlabel("Number of states")
@@ -362,7 +367,7 @@ def scatterplot_per_alg(results: list[dict], x_key: Key, y_key: Key, only_if=lam
         ax.scatter(x, y, color=colors[alg], label=alg, alpha=0.5)
 
     ax.legend()
-    plt.xlabel(x_key)
-    plt.ylabel(y_key)
+    plt.xlabel(get_pretty_key(x_key))
+    plt.ylabel(get_pretty_key(y_key))
     ax.grid(True)
     plt.show()
