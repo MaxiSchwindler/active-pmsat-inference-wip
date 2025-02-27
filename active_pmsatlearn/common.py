@@ -93,7 +93,6 @@ def do_glitch_processing(hyps: HypothesesWindow, traces_used_to_learn_hyp: list[
     Glitch processing. For every glitched transition from state s with input i, query traces for
     s.prefix + i + <specified suffixes>. Note that only one prefix is queried, the one of the state with
     the glitched transition.
-    This is currently a somewhat hacky implementation, relying on hyp_stoc. TODO: replay on hyp instead? Don't know the transitions? use glitched_trans in pmsat_info
     :param hyps: hypotheses window
     :param traces_used_to_learn_hyp: list of traces used to learn the given hypothesis. Currently only used for verification.
     :param suffix_mode: which suffixes to append to (state.prefix + glitched_input). One of:
@@ -111,43 +110,46 @@ def do_glitch_processing(hyps: HypothesesWindow, traces_used_to_learn_hyp: list[
     for hyp, hyp_stoc, pmsat_info in hyps.values():
         hyp_str = f"{len(hyp.states)}-state hypothesis {id(hyp)}"
         logger.debug(f"Use glitched transitions of {hyp_str} produce new traces...")
-        hyp_stoc.compute_prefixes()
-        all_glitched_steps = [traces_used_to_learn_hyp[traces_index][trace_index] for (traces_index, trace_index) in
-                              pmsat_info["glitch_steps"]]
-        # all_glitched_trans = [() for (s0_id, inp, s1_id) in pmsat_info["glitch_trans"]]  # TODO possibly write glitch transitions already in pmsat learn
+        all_glitched_steps = [traces_used_to_learn_hyp[traces_index][trace_index]
+                              for (traces_index, trace_index) in pmsat_info["glitch_steps"]]
 
-        for state in hyp_stoc.states:
-            for inp, next_state in state.transitions.items():
-                if inp.startswith("!"):  # glitched transition
-                    state_prefix = [get_input_from_stoc_trans(i) for i in state.prefix]
-                    glitched_input = get_input_from_stoc_trans(inp)
-                    assert (glitched_input, next_state.output) in all_glitched_steps, (f"The tuple {(glitched_input, next_state.output)} "
-                                                                                       f"was not found in {all_glitched_steps=}")
-                    prefix = state_prefix + [glitched_input]
+        all_glitched_transitions = pmsat_info["glitch_trans"]  # [(s1, i, s2), ...]
 
-                    msg = (f"{hyp_str} contained a glitched transition from state {state.state_id} (output='{state.output}', "
-                           f"prefix={state_prefix}) with input '{glitched_input}' to state {next_state.state_id}")
+        hyp.compute_prefixes()
+        for s1_id, glitched_input, s2_id in all_glitched_transitions:
+            s1 = hyp.get_state_by_id(s1_id)
+            s2 = hyp.get_state_by_id(s2_id)
+            assert (glitched_input, s2.output) in all_glitched_steps, (
+                f"The tuple {(glitched_input, s2.output)} "
+                f"was not found in {all_glitched_steps=}")
 
-                    if tuple(prefix) in already_performed_prefixes:
-                        logger.debug(f"{msg}, but the prefix {prefix} was already performed this round - continue. ")
-                        continue
+            msg = (f"{hyp_str} contained a glitched transition from state {s1.state_id} (output='{s1.output}', "
+                   f"prefix={s1.prefix}) with input '{glitched_input}' to state {s2.state_id}")
 
-                    logger.debug(f"{msg}. Perform queries with {prefix=} and {suffix_mode=}")
+            if s1.prefix is None:
+                logger.debug(f"{msg}, but since state {s1.state_id} is unreachable (prefix is None), continue.")
+                continue
 
-                    assert (state.state_id, glitched_input, next_state.state_id) in pmsat_info["glitch_trans"], f"{pmsat_info['glitch_trans']=}"
+            prefix = list(s1.prefix) + [glitched_input]
 
-                    if suffix_mode == 'all_suffixes':
-                        suffixes = all_input_combinations
-                    elif suffix_mode == 'random_suffix':
-                        suffixes = [random.choice(all_input_combinations)]
-                    else:
-                        assert False
+            if tuple(prefix) in already_performed_prefixes:
+                logger.debug(f"{msg}, but the prefix {prefix} was already performed this round - continue. ")
+                continue
 
-                    for suffix in suffixes:
-                        trace = trace_query(sul, prefix + list(suffix))
-                        new_traces.append(trace)
+            logger.debug(f"{msg}. Perform queries with {prefix=} and {suffix_mode=}")
 
-                    already_performed_prefixes.add(tuple(prefix))
+            if suffix_mode == 'all_suffixes':
+                suffixes = all_input_combinations
+            elif suffix_mode == 'random_suffix':
+                suffixes = [random.choice(all_input_combinations)]
+            else:
+                assert False
+
+            for suffix in suffixes:
+                trace = trace_query(sul, prefix + list(suffix))
+                new_traces.append(trace)
+
+            already_performed_prefixes.add(tuple(prefix))
 
     return new_traces
 
