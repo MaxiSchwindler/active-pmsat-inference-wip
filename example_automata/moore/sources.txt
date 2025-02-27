@@ -1,0 +1,19 @@
+coffeemachine_moore.dot:
+example_automata/mealy/coffeemachine.dot
+- transformed via scripts/mealy_to_moore.py
+
+coffee_moore.dot:
+https://github.com/DES-Lab/AALpy/blob/master/DotModels/coffee_moore.dot
+
+car_alarm.dot:
+https://github.com/DES-Lab/AALpy/blob/master/DotModels/car_alarm.dot
+
+mooreModel.dot:
+https://github.com/DES-Lab/AALpy/blob/master/DotModels/mooreModel.dot
+
+Angluin_Moore.dot:
+https://github.com/DES-Lab/AALpy/blob/master/DotModels/Angluin_Moore.dot
+
+GnuTLS_3.3.12_server_regular_moore.dot:
+example_automata/mealy/GnuTLS_3.3.12_server_regular.dot
+- transformed via scripts/mealy_to_moore.py

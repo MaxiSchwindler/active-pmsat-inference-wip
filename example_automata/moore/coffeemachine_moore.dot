@@ -1,0 +1,34 @@
+digraph coffeemachine_moore {
+s1 [label="s1| ok", shape=record, style=rounded];
+s2 [label="s2| error", shape=record, style=rounded];
+s5 [label="s5| ok", shape=record, style=rounded];
+s6 [label="s6| ok", shape=record, style=rounded];
+s3 [label="s3| ok", shape=record, style=rounded];
+s4 [label="s4| coffee!", shape=record, style=rounded];
+s1 -> s1 [label="WATER"];
+s1 -> s3 [label="POD"];
+s1 -> s2 [label="BUTTON"];
+s1 -> s6 [label="CLEAN"];
+s2 -> s2 [label="WATER"];
+s2 -> s2 [label="POD"];
+s2 -> s2 [label="BUTTON"];
+s2 -> s2 [label="CLEAN"];
+s5 -> s3 [label="WATER"];
+s5 -> s5 [label="POD"];
+s5 -> s2 [label="BUTTON"];
+s5 -> s6 [label="CLEAN"];
+s6 -> s1 [label="WATER"];
+s6 -> s5 [label="POD"];
+s6 -> s2 [label="BUTTON"];
+s6 -> s6 [label="CLEAN"];
+s3 -> s3 [label="WATER"];
+s3 -> s3 [label="POD"];
+s3 -> s4 [label="BUTTON"];
+s3 -> s6 [label="CLEAN"];
+s4 -> s2 [label="WATER"];
+s4 -> s2 [label="POD"];
+s4 -> s2 [label="BUTTON"];
+s4 -> s6 [label="CLEAN"];
+__start0 [shape=none, label=""];
+__start0 -> s6 [label=""];
+}

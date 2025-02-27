@@ -1,0 +1,15 @@
+coffeemachine.dot:
+https://automata.cs.ru.nl/BenchmarkCoffeeMachine-SteffenEtAl2011/Mealy
+
+xray_power_control_service.dot:
+https://automata.cs.ru.nl/BenchmarkXrayPowerControlService-SchutsEtAl2016/Mealy
+
+GnuTLS_3.3.12_server_regular.dot:
+https://github.com/DES-Lab/AALpy/blob/master/DotModels/TLS/GnuTLS_3.3.12_server_regular.dot
+- added semicolons at end of transitions
+- added labels for states
+
+OpenSSL_1.0.2_server_regular.dot:
+https://github.com/DES-Lab/AALpy/blob/master/DotModels/TLS/OpenSSL_1.0.2_server_regular.dot
+- added semicolons at end of transitions
+- added labels for states
