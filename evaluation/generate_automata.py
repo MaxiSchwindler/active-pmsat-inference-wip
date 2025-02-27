@@ -127,7 +127,7 @@ def matching_automata_files_in_directory(directory: str, automata_type: Literal[
     ]
 
 
-def add_automata_generation_arguments(parser: argparse.ArgumentParser, learn=False):
+def add_automata_generation_arguments(parser: argparse.ArgumentParser, learn=False, required=True):
     parser.add_argument('-n', '--num_automata_per_combination', type=int, default=1,
                         help=f'Number of automata *of each combination* to {"generate" if not learn else "learn"}.'
                              f'This means that a unique automaton is {"generated" if not learn else "learned"} '
@@ -136,12 +136,12 @@ def add_automata_generation_arguments(parser: argparse.ArgumentParser, learn=Fal
                              f'automata. Invalid combinations (more outputs than possible) are ignored.')
     parser.add_argument('-t', '--type', type=str, choices=SUPPORTED_AUTOMATA_TYPES, default='moore',
                         help=f'Type of automata to {"generate" if not learn else "learn"}')
-    parser.add_argument('-ns', '--num_states', type=parse_range, required=True,
+    parser.add_argument('-ns', '--num_states', type=parse_range, required=required,
                         help='Number of states per automaton. Can be either a single number or a range (e.g. 1-10)')
-    parser.add_argument('-ni', '--num_inputs', type=parse_range, required=True,
+    parser.add_argument('-ni', '--num_inputs', type=parse_range, required=required,
                         help='Number of inputs per automaton (size of the input alphabet). '
                              'Can be either a single number or a range (e.g. 1-10)')
-    parser.add_argument('-no', '--num_outputs', type=parse_range, required=True,
+    parser.add_argument('-no', '--num_outputs', type=parse_range, required=required,
                         help='Number of outputs per automaton (size of the output alphabet). '
                              'Can be either a single number or a range (e.g. 1-10)')
     parser.add_argument('--generated_automata_dir', type=str, default="generated_automata",
