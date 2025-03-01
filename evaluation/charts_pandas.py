@@ -62,10 +62,14 @@ def load_results(results_dir: str) -> pd.DataFrame:
 
 def bar_chart(df: pd.DataFrame, key: str, agg_method: str | Callable = "mean",
               only_if=None, title: str = None, group_by: Sequence[str] = None,
-              group_by_formatter: Callable[[str, Any], str] = default_group_by_formatter):
+              group_by_formatter: Callable[[str, Any], str] = default_group_by_formatter,
+              custom_axes_and_legend: bool = False):
     """Creates a bar chart of the results given in df, using the aggregated value of the @key column as y-axis."""
 
-    group_by = list(group_by or [])
+    if group_by is None:
+        group_by = []
+    else:
+        group_by = list(*group_by)
 
     if only_if:
         df = df[df.apply(only_if, axis=1)]
@@ -94,13 +98,13 @@ def bar_chart(df: pd.DataFrame, key: str, agg_method: str | Callable = "mean",
     ax.set_xticklabels(formatted_xticks)
 
     # format legend labels
-    handles, labels = ax.get_legend_handles_labels()
-    ax.legend(handles, [group_by_formatter(group_by[-1], label) for label in labels], title=group_by[-1])
+    if custom_axes_and_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend(handles, [group_by_formatter(group_by[-1], label) for label in labels], title=group_by[-1])
+        plt.xlabel("/".join(group_by[:-1]))
 
     full_groupby_name = ", ".join(group_by[:-1]) + " and " + group_by[-1]
-
     plt.title(title or f"{key} for each {full_groupby_name} ({agg_method} over results)")
-    plt.xlabel("/".join(group_by[:-1]))
     plt.ylabel(key)
 
     plt.xticks(rotation=45, ha='right')

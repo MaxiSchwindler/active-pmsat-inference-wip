@@ -59,8 +59,9 @@ def compare_result_with_gsm(result: dict) -> dict:
         "original_num_states": original_automaton.size,
         "glitch_percent": result["glitch_percent"],
         "algorithm_name": result['algorithm_name'],
+        "oracle": result['oracle'],
 
-        result['algorithm_name']: _relevant(result),
+        "apmsl_algorithm": _relevant(result),
         "GSM_with_purge_mismatches": _relevant(gsm_stats_purge),
         "GSM_without_purge_mismatches": _relevant(gsm_stats_nopurge),
     }
