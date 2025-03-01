@@ -166,7 +166,8 @@ def bar_chart_per_algorithm_and_oracle(results: list[dict], key: Key, stat_metho
         ax.set_xlabel("Algorithm/Oracle")
         ax.set_xticks(label_locations + width, [str(ao) for ao in alg_and_oracles])
         ax.set_title(f'{pretty_key} for each algorithm and oracle ({stat_method.__name__} over results)' if title is None else title)
-        ax.legend(title="Glitch Percentage")
+        if group_by:
+            ax.legend(title=group_by)
         plt.xticks(rotation=45, ha='right')
 
 
