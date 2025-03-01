@@ -572,8 +572,18 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
             msg = (f"Peak hypothesis has {{}} glitches ({percent_glitches}%) than the threshold allowed "
                    f"by the termination mode ({threshold}%). ")
             if percent_glitches <= threshold:
-                logger.debug(msg.format("less") + "Terminating.")
-                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                if termination_mode.first_time:
+                    logger.debug(msg.format("less") + "Terminating the first time we are below threshold.")
+                    return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                else:
+                    prev_percent_glitches = prev_peak_pmsat_info["percent_glitches"]
+                    msg = msg.format("less") + f"Last peak hypothesis had {prev_percent_glitches}%. "
+                    if prev_percent_glitches <= threshold:
+                        logger.debug(msg + "Terminating.")
+                        return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                    else:
+                        logger.debug(msg + "Continuing.")
+                        return Continue(**continue_kwargs)
             else:
                 logger.debug(msg.format("more"))
                 return Continue(**continue_kwargs)

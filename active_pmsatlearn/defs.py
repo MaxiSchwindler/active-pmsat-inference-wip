@@ -65,8 +65,13 @@ class EqOracleTermination(TerminationMode):
 
 @dataclass
 class GlitchThresholdTermination(RequirementsTermination):
-    """ Terminates once the percentage of glitches of a given hypothesis falls below the set threshold"""
+    """
+    Terminates once the percentage of glitches of a given hypothesis falls below the set threshold.
+    If first_time is true, it terminates the first time this threshold is reached; otherwise, it must be reached
+    twice in a row.
+    """
     threshold: float = 1.0
+    first_time: bool = False
 
 
 class ScoreImprovementTermination(ImprovementTermination):
