@@ -280,6 +280,7 @@ def calculate_statistics(original_automaton: MooreMachine, learned_automaton: Mo
         "Medium accuracy (median)": np.median(medium_accs or [0]),
         "Weak accuracy (mean)": np.mean(weak_accs or [0]),
         "Weak accuracy (median)": np.median(weak_accs or [0]),
+        "calculated_extended_stats": extended_stats
     }
 
 

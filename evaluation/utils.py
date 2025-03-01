@@ -2,6 +2,7 @@ import argparse
 import builtins
 import os
 import itertools
+import pathlib
 import random
 from collections import defaultdict
 from pprint import pprint
@@ -70,6 +71,14 @@ def new_file(path: str) -> str | None:
         abspath = os.path.abspath(f"{path}_{i}{ext}")
         i += 1
     return abspath
+
+
+def existing_dir(path) -> pathlib.Path:
+    path = pathlib.Path(path).expanduser().resolve()
+    if not path.is_dir():
+        raise argparse.ArgumentTypeError(f"'{path}' is not a valid directory")
+    return path
+
 
 
 def get_user_choices(message: str, choices: Sequence[str]) -> Sequence[str]:
