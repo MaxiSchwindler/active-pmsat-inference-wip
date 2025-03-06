@@ -1,3 +1,0 @@
-[submodule "pmsat-inference"]
-	path = pmsat-inference
-	url = git@gitlab.com:felixwallner/pmsat-inference.git
