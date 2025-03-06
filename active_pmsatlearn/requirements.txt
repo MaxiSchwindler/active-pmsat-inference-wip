@@ -1,5 +1,5 @@
 # required for pmsat_learn (copied from pmsat-inference/requirements.txt):
-aalpy==1.4.2
+# aalpy==1.4.2  # currently using own clone
 matplotlib==3.9.2
 Pebble==5.0.7
 python-sat[aiger]==1.8.dev13

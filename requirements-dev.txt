@@ -1,0 +1,2 @@
+nbstripout
+pre-commit

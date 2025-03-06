@@ -1,3 +1,5 @@
-jinja2
-pydot
-aalpy
+tqdm  # progress bars in learn_automata.py
+pydot  # for visualizing learned models
+# aalpy  # currently using own fork
+nbstripout  # avoid pushing notebooks with output, creating huge repos
+pre-commit  # for nbstripout pre-commit hook
