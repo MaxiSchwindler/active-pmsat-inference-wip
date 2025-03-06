@@ -22,7 +22,7 @@ from evaluation.utils import new_file
 def get_sul_from_file(file: str, glitch_percent: float = 0):
     """Load the automaton from the file and set up the SUL with glitches if needed."""
     mm = load_automaton_from_file(file, "moore")
-    return setup_sul(mm, glitch_percent=glitch_percent)
+    return setup_sul(mm, glitch_percent=glitch_percent, glitch_mode="enter_random_state")
 
 
 def get_oracle(oracle_name: str, sul):
@@ -35,6 +35,8 @@ def run_apmsl(sul, oracle):
     kwargs = {}
     if oracle is not None:
         kwargs["termination_mode"] = EqOracleTermination(oracle)
+
+    kwargs["termination_mode"] = GlitchThresholdTermination(1.0)
 
     return run_activePmSATLearn(
         alphabet=sul.automaton.get_input_alphabet(),

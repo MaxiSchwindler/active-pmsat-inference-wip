@@ -69,7 +69,7 @@ def bar_chart(df: pd.DataFrame, key: str, agg_method: str | Callable = "mean",
     if group_by is None:
         group_by = []
     else:
-        group_by = list(*group_by)
+        group_by = list(g for g in group_by)
 
     if only_if:
         df = df[df.apply(only_if, axis=1)]

@@ -11,6 +11,7 @@ from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.oracles import RandomWMethodEqOracle
 
 import active_pmsatlearn.learnalgo
+from active_pmsatlearn import GlitchThresholdTermination
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
 from evaluation.utils import dict_product
@@ -308,5 +309,10 @@ class APMSL(MooreLearningAlgorithm):
         'NO_CP':    {'cex_processing': False},
         'ACAHC':    {'add_cex_as_hard_clauses': True},
         'NO_ACAHC': {'add_cex_as_hard_clauses': False},
+
+        'GTT1':      {'termination_mode': lambda glitch_percent: GlitchThresholdTermination(threshold=glitch_percent+0.5,
+                                                                                            first_time=True)},
+        'GTT2':      {'termination_mode': lambda glitch_percent: GlitchThresholdTermination(threshold=glitch_percent+0.5,
+                                                                                            first_time=False)},
     }
 

@@ -310,6 +310,8 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
             alg_kwargs['termination_mode'] = EqOracleTermination(oracle)
         else:
             alg_kwargs['eq_oracle'] = oracle
+    if callable(tm := algorithm.kwargs.get("termination_mode", None)):
+        algorithm.kwargs["termination_mode"] = tm(glitch_percent)
 
     try:
         learned_model, info = algorithm.run(**alg_kwargs)
