@@ -404,13 +404,14 @@ def learn_automata(automata_type: str, automata_files: list[str],
         pprint(automata_files)
         return
 
-    all_combinations_n_times = [c for c in all_combinations for _ in range(learn_num_times)]
+    # all_combinations_n_times = [c for c in all_combinations for _ in range(learn_num_times)]
+    all_combinations_n_times = all_combinations * learn_num_times
 
     write_results_info(results_dir, automata_type, automata_files, algorithm_names, learn_num_times, max_num_steps,
                        oracle_types, results_dir)
 
     if use_multiprocessing:
-        pool = ProcessPool(max_workers=multiprocessing.cpu_count() // 2)
+        pool = ProcessPool(max_workers=3)
         atexit.register(stop_remaining_jobs, pool)
 
         futures = pool.map(learn_automaton_wrapper, all_combinations_n_times)
@@ -423,8 +424,13 @@ def learn_automata(automata_type: str, automata_files: list[str],
                         results.append(f)
                         pbar.update(1)
     else:
-        # dont use multiple processes (debugging)
-        results = [learn_automaton_wrapper(args) for args in all_combinations_n_times]
+        results = []
+        with logging_redirect_tqdm():
+            with std_out_err_redirect_tqdm() as orig_stdout:
+                with tqdm(total=len(all_combinations_n_times), file=orig_stdout, dynamic_ncols=True) as pbar:
+                    for args in all_combinations_n_times:
+                        results.append(learn_automaton_wrapper(args))
+                        pbar.update(1)
     print_results_info(results)
 
 

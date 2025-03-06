@@ -3,8 +3,10 @@ import itertools
 import logging
 from collections import defaultdict
 import random
+import multiprocessing
 from typing import Literal
 
+from pebble import concurrent
 from aalpy import KWayTransitionCoverageEqOracle, AutomatonSUL
 
 from evaluation.utils import TracedMooreSUL
@@ -13,7 +15,8 @@ from active_pmsatlearn.heuristics import *
 from active_pmsatlearn.common import *
 from active_pmsatlearn.defs import *
 from active_pmsatlearn.utils import *
-from active_pmsatlearn.log import get_logger, DEBUG_EXT
+from active_pmsatlearn.log import get_logger, DEBUG_EXT, set_current_process_name
+
 logger = get_logger("APMSL")
 
 INPUT_COMPLETENESS_PROCESSING_DEFAULT = 'random_suffix'
@@ -157,6 +160,7 @@ def run_activePmSATLearn(
 
     start_time = time.time()
     must_end_by = start_time + timeout if timeout is not None else 100 * 365 * 24 * 60 * 60  # no timeout -> must end in 100 years :)
+    timed_out = False
     learning_rounds = 0
 
     all_input_combinations = list(itertools.product(alphabet, repeat=extension_length))
@@ -191,7 +195,7 @@ def run_activePmSATLearn(
     #             MAIN LOOP             #
     #####################################
 
-    while not (timed_out := (time.time() >= must_end_by)):
+    while True:
         logger.info(f"Starting learning round {(learning_rounds := learning_rounds + 1)}")
 
         min_num_states = max(min_num_states, get_num_outputs(traces))
@@ -208,24 +212,27 @@ def run_activePmSATLearn(
                                           must_end_by=must_end_by,
                                           **common_pmsatlearn_kwargs
                                           )
-        assert not any((info["timed_out"] or (h is None)) for h, h_s, info in hypotheses.values()), "Sliding window should not contained timed-out hypotheses"
+        assert len(hypotheses) == sliding_window_size
         traces_used_to_learn = copy.deepcopy(traces)
         detailed_learning_info[learning_rounds]["traces_used_to_learn"] = traces_used_to_learn
 
-        if len(hypotheses) != sliding_window_size:
-            # if we have a timeout during learning of the sliding window, no further hypotheses will be learned;
-            # the returned hypotheses window contains only those that were successfully learnt
-            last_learnt_num_states = max(hypotheses.keys()) if len(hypotheses) != 0 else min_num_states - 1
-            logger.debug(f"Learning of all hypotheses after {last_learnt_num_states} states timed out. ")
-            detailed_learning_info[learning_rounds]["timed_out"] = True
-            detailed_learning_info[learning_rounds]["last_learnt"] = last_learnt_num_states
+        # remove timed out hyps from hypotheses window
+        timed_out_num_states = [n for n, r in hypotheses.items() if r == "timed_out"]
+        if timed_out_num_states:
+            timed_out = True
+            for n in timed_out_num_states:
+                del hypotheses[n]
 
-            if (last_learnt_num_states + 1) <= (min_num_states + (sliding_window_size // 2)):
-                logger.debug(f"First timed-out hypothesis was in left side of sliding window. Returning peak hypothesis from previous round.")
-                timed_out = True
-                break
-            else:
-                logger.debug(f"First timed-out hypothesis was in right side of sliding window. Continuing with truncated window.")
+        # remove unsat hyps from hypotheses window (can only have unsat hyps if using glitchless_data)
+        unsat_num_states = [n for n, r in hypotheses.items() if r == "unsat"]
+        if unsat_num_states:
+            assert "glitchless_data" in common_pmsatlearn_kwargs, (
+                "Without specifying 'glitchless_data', we should never get UNSAT!"
+            )
+            assert len(common_pmsatlearn_kwargs["glitchless_data"]) > 0
+
+            for n in unsat_num_states:
+                del hypotheses[n]
 
         detailed_learning_info[learning_rounds]["pmsat_info"] = {ns: info for ns, (h, hs, info) in hypotheses.items()}
         detailed_learning_info[learning_rounds]["hyp"] = {ns: str(h) for ns, (h, hs, info) in hypotheses.items()}
@@ -235,7 +242,7 @@ def run_activePmSATLearn(
         #           PREPROCESSING           #
         #####################################
 
-        if input_completeness_preprocessing:  # TODO: could this lead to an infinite loop?
+        if input_completeness_preprocessing and not timed_out:  # TODO: could this lead to an infinite loop?
             preprocessing_additional_traces = do_input_completeness_preprocessing(hyps=hypotheses, suffix_mode=input_completeness_preprocessing,
                                                                                   **common_processing_kwargs)
 
@@ -273,7 +280,8 @@ def run_activePmSATLearn(
                                     current_min_num_states=min_num_states,
                                     traces_used_to_learn=traces,
                                     termination_mode=termination_mode,
-                                    current_learning_info=detailed_learning_info[learning_rounds])
+                                    current_learning_info=detailed_learning_info[learning_rounds],
+                                    timed_out=timed_out)
 
         match action:
             case Terminate(hyp, hyp_stoc, pmsat_info):
@@ -397,9 +405,6 @@ def run_activePmSATLearn(
 
     if timed_out:
         logger.warning(f"Aborted learning after reaching timeout (start: {start_time:.2f}, now: {time.time():.2f}, timeout: {timeout})")
-        if previous_scores:
-            logger.debug(f"Returning peak hypothesis of previous round")
-            result = get_absolute_peak_hypothesis(previous_hypotheses, previous_scores)
 
     hyp, hyp_stoc, pmsat_info = result
     if return_data:
@@ -423,30 +428,50 @@ def log_and_store_additional_traces(additional_traces: list[Trace], current_lear
     current_learning_info[key] = additional_traces
 
 
-def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: list[Trace], must_end_by: float = 0.0,
-                         **common_pmsatlearn_kwargs) -> HypothesesWindow:
+@concurrent.process(daemon=False)
+def learn_single_hypothesis(num_states, traces, must_end_by, **common_pmsatlearn_kwargs):
+    set_current_process_name(f"LEARN_{num_states}s_HYP_{multiprocessing.current_process().pid}")
+    logger.debug(f"Learning {num_states}-state hypothesis...")
+
+    hyp, h_stoc, pmsat_info = run_pmSATLearn(
+        data=traces,
+        n_states=num_states,
+        timeout=max(must_end_by - time.time(), 0),
+        **common_pmsatlearn_kwargs
+    )
+
+    if pmsat_info["timed_out"]:
+        return num_states, "timed_out"
+    elif not pmsat_info["is_sat"]:
+        assert "glitchless_data" in common_pmsatlearn_kwargs, (
+            "Without specifying 'glitchless_data', we should never get UNSAT!"
+        )
+        assert len(common_pmsatlearn_kwargs["glitchless_data"]) > 0
+        return num_states, "unsat"
+
+    pmsat_info["percent_glitches"] = get_glitch_percentage(pmsat_info, traces)
+
+    logger.debug(f"Finished learning {num_states}-state hypothesis.")
+    return num_states, (hyp, h_stoc, pmsat_info)
+
+
+def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: list[Trace],
+                         must_end_by: float = 0.0, **common_pmsatlearn_kwargs) -> HypothesesWindow:
     logger.debug(f"Running pmSATLearn to learn {sliding_window_size} hypotheses with between {min_num_states} and "
                  f"{min_num_states + sliding_window_size - 1} states from {len(traces)} traces")
-    num_outputs = get_num_outputs(traces)
-    learned = {}
-    for i in range(sliding_window_size):
-        num_states = min_num_states + i
-        assert num_states >= num_outputs
-        logger.debug(f"Learning {num_states}-state hypothesis...")
-        hyp, h_stoc, pmsat_info = run_pmSATLearn(data=traces,
-                                                 n_states=num_states,
-                                                 timeout=max(must_end_by - time.time(), 0),
-                                                 **common_pmsatlearn_kwargs)
-        if pmsat_info["timed_out"]:
-            break  # the first time learning times out, we end learning the sliding window (everything afterwards will also time out)
-        elif not pmsat_info["is_sat"]:
-            assert "glitchless_data" in common_pmsatlearn_kwargs, ("Without specifying 'glitchless_data', we should "
-                                                                   "never get UNSAT!")
-            assert len(common_pmsatlearn_kwargs["glitchless_data"]) > 0
-            continue  # TODO: handle unsat! -> learn again without hard clauses?
 
-        pmsat_info["percent_glitches"] = get_glitch_percentage(pmsat_info, traces)
-        learned[num_states] = hyp, h_stoc, pmsat_info
+    num_outputs = get_num_outputs(traces)
+    assert min_num_states >= num_outputs
+    learned = {}
+
+    futures = [
+        learn_single_hypothesis(min_num_states + i, traces, must_end_by, **common_pmsatlearn_kwargs)
+        for i in range(sliding_window_size)
+    ]
+
+    for future in futures:
+        num_states, result = future.result()
+        learned[num_states] = result
 
     return learned
 
@@ -460,8 +485,8 @@ def find_index_of_unimodal_peak(scores: dict[int, float]) -> int | None:
         return peak_index
 
 
-def find_index_of_absolute_peak(scores: dict[int, float]) -> int:
-    if scores is None:
+def find_index_of_absolute_peak(scores: dict[int, float]) -> int | None:
+    if not scores:
         return None
     vals = list(scores.values())
     return vals.index(max(vals))
@@ -501,7 +526,8 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
                        previous_hypotheses: HypothesesWindow | None, previous_scores: dict[int, float] | None,
                        current_min_num_states: int, traces_used_to_learn: list[Trace],
                        termination_mode: TerminationMode,
-                       current_learning_info: dict[str, Any]) -> Action:
+                       current_learning_info: dict[str, Any],
+                       timed_out: bool) -> Action:
     peak_index = current_learning_info["peak_index"] = find_index_of_absolute_peak(current_scores)
     peak_num_states = current_learning_info["peak_num_states"] = get_num_states_from_scores_index(current_scores, peak_index)
 
@@ -510,6 +536,19 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
 
     sliding_window_size = len(current_scores)
     min_allowed_num_states = get_num_outputs(traces_used_to_learn)
+
+    # special case for timeouts:
+    if timed_out:
+        if previous_hypotheses and prev_peak_num_states not in current_hypotheses.keys():
+            logger.debug(f"Since the PMSAT-LEARN call for the previous peak num states ({prev_peak_num_states}) timed out, "
+                         f"a comparison of the remaining (not timed-out) current hypotheses does not make sense. "
+                         f"Terminating with previous peak hypothesis.")
+            return Terminate(*previous_hypotheses[prev_peak_num_states])
+        else:
+            logger.debug(f"Some PMSAT-LEARN calls timed out, but the previous peak num states hypothesis ({prev_peak_num_states} states) "
+                         f"was successfully learnt again with more data; therefore, return the peak hypothesis "
+                         f"({peak_num_states} states) of the current window.")
+            return Terminate(*current_hypotheses[peak_num_states])
 
     # special case for MAT-mode (eq oracle): ask directly whether current peak hypothesis is correct
     continue_kwargs = dict()
