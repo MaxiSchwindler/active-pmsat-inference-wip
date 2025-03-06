@@ -1,3 +1,3 @@
 @echo off
-set PYTHONPATH=%PYTHONPATH%;./;./pmsat-inference
+set PYTHONPATH=./;../pmsat-inference;../AALpy;%PYTHONPATH%;
 echo (win) PYTHONPATH set to: %PYTHONPATH%

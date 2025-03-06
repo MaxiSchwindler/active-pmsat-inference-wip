@@ -6,5 +6,5 @@ else
     PATH_SEPARATOR=":"
 fi
 
-export PYTHONPATH="./pmsat-inference$PATH_SEPARATOR./$PATH_SEPARATOR$PYTHONPATH"
+export PYTHONPATH="./$PATH_SEPARATOR../pmsat-inference$PATH_SEPARATOR../AALpy$PYTHONPATH"
 echo "(unix) PYTHONPATH set to $PYTHONPATH"
