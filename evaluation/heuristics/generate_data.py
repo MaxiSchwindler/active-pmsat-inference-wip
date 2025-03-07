@@ -204,7 +204,7 @@ def learn_automata_and_calculate_metrics(automata_files: list[str], multiprocess
 
 def main():
     if len(sys.argv) > 1:
-        parser = argparse.ArgumentParser(description='Generate training data. Learn the same automaton with PMSATLearn, '
+        parser = argparse.ArgumentParser(description='Generate data. Learn the same automaton with PMSATLearn, '
                                                      'with different numbers of states, and collect the results.')
         parser.add_argument('-dmin', '--diff_min_states', type=int, default=3,
                             help='Difference of minimum number states to learn to real number of states')
@@ -215,6 +215,7 @@ def main():
         parser.add_argument('-gp', '--glitch_percent', type=float, default=0,
                             help='Percentage of glitches')
 
+        # TODO: refactor to --files like in learn_automata.py
         parser.add_argument('--learn_all_automata_from_dir', type=str,
                             help='Learn all automata from a directory. If this directory is specified, '
                                  'all arguments concerning automata generation except -t are ignored. '
@@ -246,6 +247,7 @@ def main():
         results_dir = args.results_dir
 
     else:
+        # TODO: remove/refactor like learn_automata.py
         diff_min_states = int(input("Difference of minimum number states to learn to real number of states: "))
         diff_max_states = int(input("Difference of maximum number states to learn to real number of states: "))
         extension_length = int(input("Extension length: "))
