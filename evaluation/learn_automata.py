@@ -440,16 +440,18 @@ def validate_arguments(args):
     """Ensure that automata generation arguments are required if no directory is given."""
     required_automata_gen_args = ['num_automata_per_combination', 'num_states', 'num_inputs', 'num_outputs']
 
-    if args.files:
+    if not args.files:
         # If files are given, ignore automata generation arguments (they must not be given)
-        return
+        # Otherwise, ensure all automata generation arguments are provided
+        missing_args = [arg for arg in required_automata_gen_args if getattr(args, arg, None) is None]
+        if missing_args:
+            print(f"Error: The following arguments are required unless --learn_all_automata_from_dir is specified: "
+                  f"{', '.join('--' + arg.replace('_', '-') for arg in missing_args)}")
+            sys.exit(1)
 
-    # Otherwise, ensure all automata generation arguments are provided
-    missing_args = [arg for arg in required_automata_gen_args if getattr(args, arg, None) is None]
-    if missing_args:
-        print(f"Error: The following arguments are required unless --learn_all_automata_from_dir is specified: "
-              f"{', '.join('--' + arg.replace('_', '-') for arg in missing_args)}")
-        sys.exit(1)
+    if len(args.glitch_percent) > 0 and not args.glitch_mode:
+        print(f"Error: If glitch_percent is given, glitch_mode must also be specified.")
+        sys.exit(2)
 
 
 def main():
