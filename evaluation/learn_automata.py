@@ -449,7 +449,7 @@ def validate_arguments(args):
                   f"{', '.join('--' + arg.replace('_', '-') for arg in missing_args)}")
             sys.exit(1)
 
-    if len(args.glitch_percent) > 0 and not args.glitch_mode:
+    if args.glitch_percent and any(g > 0 for g in args.glitch_percent) and not args.glitch_mode:
         print(f"Error: If glitch_percent is given, glitch_mode must also be specified.")
         sys.exit(2)
 
