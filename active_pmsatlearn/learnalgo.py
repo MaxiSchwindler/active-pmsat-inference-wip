@@ -1,19 +1,16 @@
 import copy
 import itertools
 import logging
-from collections import defaultdict
-import random
 import multiprocessing
 from typing import Literal
 
 from pebble import concurrent
-from aalpy import KWayTransitionCoverageEqOracle, AutomatonSUL
 
-from evaluation.utils import TracedMooreSUL
 from pmsatlearn import run_pmSATLearn
-from active_pmsatlearn.heuristics import *
-from active_pmsatlearn.common import *
+
 from active_pmsatlearn.defs import *
+from active_pmsatlearn.heuristics import *
+from active_pmsatlearn.processing import *
 from active_pmsatlearn.utils import *
 from active_pmsatlearn.log import get_logger, DEBUG_EXT, set_current_process_name
 
@@ -504,24 +501,6 @@ def get_absolute_peak_hypothesis(hypotheses: HypothesesWindow, scores: dict[int,
     return hypotheses[peak_num_states]
 
 
-def sanity_checks(hyp: SupportedAutomaton) -> tuple[bool, str]:
-    """
-    Perform a bunch of sanity checks, without which we don't accept a hypothesis
-    :param hyp: hypothesis to check
-    :returns a tuple of (passes, reason)
-    """
-
-    # hypothesis must be input complete
-    hyp.compute_prefixes()
-    if not hyp.is_input_complete():
-        return False, "Not input complete"
-
-    if any(s.prefix is None for s in hyp.states):
-        return False, "Has unreachable states"
-
-    return True, "Passes all checks"
-
-
 def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dict[int, float],
                        previous_hypotheses: HypothesesWindow | None, previous_scores: dict[int, float] | None,
                        current_min_num_states: int, traces_used_to_learn: list[Trace],
@@ -598,12 +577,6 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
 
     peak_hyp, peak_hyp_stoc, peak_pmsat_info = current_hypotheses[peak_num_states]
     prev_peak_hyp, prev_peak_hyp_stoc, prev_peak_pmsat_info = previous_hypotheses[prev_peak_num_states]
-
-    # passes_sanity_checks, reason = sanity_checks(peak_hyp)  # TODO not entirely sure about the sanity checks
-    # if not passes_sanity_checks:
-    #     logger.debug(f"Peak hypothesis did not pass sanity checks: {reason}. Continuing.")
-    #     return Continue()
-    # logger.debug(f"Peak hypothesis passed sanity checks; checking requirements")
 
     match termination_mode:
         case GlitchThresholdTermination(threshold):
@@ -691,130 +664,6 @@ def is_positioned_correctly(sliding_window_size, peak_index, current_min_num_sta
                      f"{'exactly in the middle' if peak_index == mid_index else 'on the left side but cannot move further left'}.")
         return True
     return False
-
-
-def do_state_exploration(hyp: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input],
-                          all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
-    logger.debug(f"Do state exploration of {len(hyp.states)}-state hypothesis {id(hyp)} to produce new traces...")
-
-    # TODO: this method does not make much (any?) sense currently
-
-    step_probability = 0.5
-    hyp.make_input_complete()  #...
-    hyp.reset_to_initial()
-
-    while random.random() < step_probability:
-        input = random.choice(alphabet)
-        hyp.step(input)
-
-    hyp.compute_prefixes()
-    prefix = hyp.current_state.prefix
-    new_traces = [trace_query(sul, list(prefix) + list(suffix)) for suffix in all_input_combinations]
-
-    logger.debug(f"Produced {len(new_traces)} new traces from state exploration of {len(hyp.states)}-state hypothesis {id(hyp)}")
-
-    return new_traces
-
-
-def do_window_counterexample_processing(hypotheses: HypothesesWindow, sul: SupportedSUL, alphabet: list[Input],
-                                        all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
-    """
-    'Counterexample processing' on a window of hypotheses.
-    For each pair of 'adjacent' hypotheses (i.e. they have n and n+1 states), get the distinguishing sequence
-    and perform ARPNI counterexample processing on it.
-    :param hypotheses: Hypotheses window
-    :param sul: system under learning
-    :param alphabet: input alphabet
-    :param all_input_combinations: input combinations
-    """
-    logger.debug(f"Do window counterexample processing for hypotheses window of size {len(hypotheses)}...")
-    num_states = sorted(hypotheses.keys())
-    combinations = [(hypotheses[num_states[i]][0], hypotheses[num_states[i + 1]][0]) for i in range(len(num_states) - 1)]
-
-    new_traces = []
-    performed_prefixes = set()
-
-    for hyp_a, hyp_b in combinations:
-        assert len(hyp_a.states) + 1 == len(hyp_b.states)  # only compare adjacent hypotheses
-        cex = hyp_a.find_distinguishing_seq(hyp_a.initial_state, hyp_b.initial_state, alphabet)
-        if cex is not None and tuple(cex) not in performed_prefixes:
-            logger.debug_ext(f"CEX between {len(hyp_a.states)}-state hypothesis {id(hyp_a)} and {len(hyp_b.states)}-state hypothesis {id(hyp_b)}: {cex}")
-            new_traces.extend(do_cex_processing(cex=cex, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations))
-            for p in get_prefixes(cex):
-                performed_prefixes.add(tuple(p))
-
-    return new_traces
-
-
-def do_replay_glitches(hyps: HypothesesWindow, traces_used_to_learn: list[Trace], suffix_modes: Sequence[str],
-                       sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
-    """
-    Replay the traces which pmsat_learn marked as containing glitches.
-    :param hyps: hypotheses window
-    :param pmsat_info: info dict returned from pmsat_learn call when learning hyp
-    :param traces_used_to_learn: traces used to learn hyp
-    :param suffix_modes: which suffixes to append after a glitch step. Choose from:
-                     'original_suffix': continue with the original trace; i.e. each trace containing a glitch is replayed as a whole
-                     'random_suffix': after a glitch step, continue with a random input sequence from alphabet^extension_length
-    :param sul: system under learning
-    :param alphabet: input alphabet
-    :param all_input_combinations: all input combinations, alphabet^extension_length
-    :return: list of traces
-    """
-    new_traces = []
-    replayed_trace_indices = set()
-    replayed_trace_step_pairs = set()
-
-    for hyp, hyp_stoc, pmsat_info in hyps.values():
-        hyp_str = f"{len(hyp.states)}-state hypothesis {id(hyp)}"
-        logger.debug(f"Replaying traces with glitched transitions of {hyp_str}. {suffix_modes=}")
-
-        for trace_index, step_index in pmsat_info["glitch_steps"]:
-            glitch_trace = traces_used_to_learn[trace_index]
-
-            if 'original_suffix' in suffix_modes:
-                if trace_index not in replayed_trace_indices:
-                    # replay whole trace
-                    new_traces.append(trace_query(sul, [i for i, o in glitch_trace[1:]]))
-                    replayed_trace_indices.add(trace_index)
-
-            if 'random_suffix' in suffix_modes:
-                if (trace_index, step_index) not in replayed_trace_step_pairs:
-                    # replay trace until glitch, then append random suffix
-                    random_suffix = random.choice(all_input_combinations)
-                    new_traces.append(trace_query(sul, [i for i, o in glitch_trace[1:step_index+1]] + list(random_suffix)))
-                    replayed_trace_step_pairs.add((trace_index, step_index))
-
-    return new_traces
-
-
-def do_transition_coverage(hyp: SupportedAutomaton, num_steps: int, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
-    logger.debug(f"Performing {num_steps} for transition coverage")  #Problem: if there are states with prefix None, generate_prefix_steps in line 124 fails
-    hyp_sul = TracedMooreSUL(mm=MooreMachine(initial_state=hyp.initial_state, states=[s for s in hyp.states if s.prefix is not None]))
-    oracle = KWayTransitionCoverageEqOracle(alphabet=alphabet, sul=hyp_sul, max_number_of_steps=num_steps)
-    oracle.find_cex(MooreMachine(initial_state=hyp.initial_state, states=[s for s in hyp.states if s.prefix is not None]))
-    assert hyp_sul.num_steps <= num_steps
-
-    new_traces = []
-    for trace in hyp_sul.traces:
-        inputs = [i for (i, o) in trace[1:]]
-        new_traces.append(trace_query(sul, inputs))
-
-    return new_traces
-
-
-def do_random_walks(num_steps: int, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
-    logger.debug(f"Performing random walks with a total of {num_steps} steps")
-    new_traces = []
-    remaining_steps = num_steps
-    while remaining_steps > 0:
-        walk_len = random.randint(1, remaining_steps)
-        random_walk = tuple(random.choice(alphabet) for _ in range(walk_len))
-
-        new_traces.append(trace_query(sul, random_walk))
-        remaining_steps -= walk_len
-
-    return new_traces
 
 
 def build_info_dict(hyp, sul, learning_rounds, total_time, termination_mode,
