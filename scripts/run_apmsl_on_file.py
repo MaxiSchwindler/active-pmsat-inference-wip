@@ -3,7 +3,7 @@ import logging
 import os
 import argparse
 from collections.abc import Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
 
 from aalpy.SULs import MooreSUL
@@ -60,6 +60,7 @@ def save_learning_results(file: str, info):
         json.dump(info, f, indent=4)
     return filename
 
+
 def compare_learned_model_with_original(original_model, learned_model):
     """Compare the original and learned models, print bisimilarity and statistics."""
     print(f"Original model: {len(original_model.states)} states")
@@ -110,7 +111,8 @@ def learn_file(file: str, glitch_percent: float, oracle_name: str = None, log_fi
     oracle = get_oracle(oracle_name, sul)
 
     print(f"Learning {file} with SUL {sul} and oracle {oracle}")
-    with log_to_file(log_file):
+    cm = log_to_file(log_file) if log_file is not None else nullcontext()
+    with cm:
         learned_model, info = run_apmsl(sul, oracle)
 
     results_file = save_learning_results(file, info)
@@ -143,7 +145,9 @@ def main():
         print(f"{args.file} is not a .dot file")
         exit(3)
 
-    log_file = new_file(args.log_file)
+    log_file = args.log_file
+    if log_file is not None:
+        log_file = new_file(log_file)
 
     learned_model, info, results_file = learn_file(args.file, args.glitch_percent, args.oracle, log_file)
     if args.create_report:
