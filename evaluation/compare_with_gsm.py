@@ -1,6 +1,7 @@
 import argparse
 import json
 import pathlib
+import time
 from pathlib import Path
 
 import aalpy
@@ -39,16 +40,22 @@ def compare_result_with_gsm(result: dict) -> dict:
     )
 
     logger.info(f"Running GSM without purge_mismatches...")
+    start_time = time.time()
     gsm_mm_nopurge: MooreMachine = run_gsm_baseline(**gsm_kwargs, purge_mismatches=False)
+    end_time = time.time()
     gsm_stats_nopurge = calculate_statistics(original_automaton, gsm_mm_nopurge)
     gsm_stats_nopurge["learned_automaton_size"] = gsm_mm_nopurge.size
     gsm_stats_nopurge["bisimilar"] = bisimilar(original_automaton, gsm_mm_nopurge)
+    gsm_stats_nopurge["total_time"] = end_time - start_time
 
     logger.info(f"Running GSM with purge_mismatches...")
+    start_time = time.time()
     gsm_mm_purge: MooreMachine = run_gsm_baseline(**gsm_kwargs, purge_mismatches=True)
+    end_time = time.time()
     gsm_stats_purge = calculate_statistics(original_automaton, gsm_mm_purge)
     gsm_stats_purge["learned_automaton_size"] = gsm_mm_purge.size
     gsm_stats_purge["bisimilar"] = bisimilar(original_automaton, gsm_mm_purge)
+    gsm_stats_purge["total_time"] = end_time - start_time
 
     def _relevant(stats: dict) -> dict:
         # remove other stats/things we don't care about
@@ -58,6 +65,7 @@ def compare_result_with_gsm(result: dict) -> dict:
             "Recall": stats["Recall"],
             "F-Score": stats["F-Score"],
             "num_states": stats["learned_automaton_size"],
+            "total_time": stats["total_time"],
         }
 
     return {

@@ -59,6 +59,7 @@ def load_results(results_dir: str) -> pd.DataFrame:
             data.append(result)
     return pd.DataFrame(data)
 
+
 def load_gsm_comparison_data(results_dir, results: pd.DataFrame = None):
     """ Load GSM comparison data from the "GSM_comparison" folder inside the given results_dir.
     If a `results` dataframe is given, the comparison data is added there; otherwise, a new
@@ -93,7 +94,7 @@ def load_gsm_comparison_data(results_dir, results: pd.DataFrame = None):
 
     # given a results df in which to write comparison data
     results_file_counts = results['results_file'].value_counts()
-    for stat in ("bisimilar", "Precision", "Recall", "F-Score"):  # "total_time" "learning_rounds"
+    for stat in ("bisimilar", "Precision", "Recall", "F-Score", "total_time"):  #  "learning_rounds"
         for gsm_alg in ("GSM_with_purge_mismatches", "GSM_without_purge_mismatches"):
             col_name = f"{gsm_alg}.{stat}"
 
@@ -172,7 +173,8 @@ def bar_chart(df: pd.DataFrame, key: str, agg_method: str | Callable = "mean",
 def multiple_bar_charts(df: pd.DataFrame, keys: Sequence[str], agg_method: str | Callable = "mean",
               only_if=None, title: str = None, group_by: Sequence[str] = None,
               group_by_formatter: Callable[[str, Any], str] = default_group_by_formatter,
-              custom_axes_and_legend: bool = False, positioning_mode: Literal["beside", "below", "twocols"] = "below"):
+              custom_axes_and_legend: bool = False, positioning_mode: Literal["beside", "below", "twocols"] = "below",
+              figsize: tuple[int, int] = (12, 6)):
     """Creates bar charts for the given keys, one chart per key, all grouped by the same columns."""
 
     if group_by is None:
@@ -199,7 +201,7 @@ def multiple_bar_charts(df: pd.DataFrame, keys: Sequence[str], agg_method: str |
         plot_kwargs["sharey"] = True
 
     # Create subplots with enough rows and columns
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(12 * n_cols, 6 * n_rows), **plot_kwargs)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(figsize[0] * n_cols, figsize[1] * n_rows), **plot_kwargs)
     axes = axes.flatten()  # Flatten the axes array to make it easier to index
 
     # Format the group_by labels for x-ticks
