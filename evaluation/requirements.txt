@@ -1,4 +1,6 @@
 tqdm  # progress bars in learn_automata.py
 pydot  # for visualizing learned models
 jinja2  # for creating reports in visualize_run.py
+pandas  # mostly needed in report_pandas.ipynb and charts_pandas.py
+scipy  # needed for compare_with_gsm.py
 

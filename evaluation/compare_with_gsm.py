@@ -18,7 +18,14 @@ logger = get_logger("COMPARE_WITH_GSM")
 def compare_result_with_gsm(result: dict) -> dict:
     logger.info(f"Comparing {result['results_file']}")
 
-    original_automaton: MooreMachine = load_automaton_from_file(result['original_automaton'], "moore")
+    automaton_file = result['original_automaton']
+    # TODO quickfix after repo transition - remove in the future
+    old_sub_path = 'MastersThesis\\active-pmsat-inference-wip'
+    new_sub_path = 'MastersThesis\\OLD_active-pmsat-inference-wip'
+    if old_sub_path in automaton_file:
+        automaton_file = automaton_file.replace(old_sub_path, new_sub_path)
+
+    original_automaton: MooreMachine = load_automaton_from_file(automaton_file, "moore")
 
     num_rounds = result['learning_rounds']
     traces_of_last_round = result['detailed_learning_info'][str(num_rounds)]["traces_used_to_learn"]
