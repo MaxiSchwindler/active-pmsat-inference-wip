@@ -54,6 +54,8 @@ class AlgorithmWrapper:
     aliases: dict[str, str] = {}
     shortcuts: dict[dict[str, Any]] = {}
 
+    default_kwargs_overridable: bool = False
+
     @classmethod
     def get_default_kwargs(cls):
         common_params = {}
@@ -77,7 +79,11 @@ class AlgorithmWrapper:
             if a in self.shortcuts:
                 for k, v in self.shortcuts[a].items():
                     if k in self.kwargs and self.kwargs[k] != v:
-                        raise ValueError(f"Key {k} is already in kwargs, but would be overwritten by shortcut {a}")
+                        if self.default_kwargs_overridable:
+                            if self.get_default_kwargs()[k] == self.kwargs[k]:
+                                self.kwargs[k] = v  # TODO: bit hacky that this is in here twice
+                                continue
+                        raise ValueError(f"Key {k} is already in kwargs (value: {self.kwargs[k]}), but would be overwritten by shortcut {a} (value: {v})")
                     self.kwargs[k] = v
             else:
                 positional_args.append(a)
@@ -323,8 +329,10 @@ class APMSL(MooreLearningAlgorithm):
 class GSM(MooreLearningAlgorithm):
     function = run_activeGSM
 
+    default_kwargs_overridable = True
+
     default_parameters = dict(
-        timeout=2*MINUTES,
+        timeout=5*MINUTES,
         certainty=0.05,
     )
 
@@ -339,6 +347,14 @@ class GSM(MooreLearningAlgorithm):
         'ICP':      {'input_completeness_preprocessing': True},
         'NO_ICP':   {'input_completeness_preprocessing': False},
 
+        'CP':       {'cex_processing': True},
+        'NO_CP':    {'cex_processing': False},
+
+        'UDAC':     {'cex_processing': True,
+                     'use_dis_as_cex': True},
+
+        'CT01':     {'certainty': 0.1},
+        'CT001':    {'certainty': 0.01},
     }
 
     def kwargs_from_meta_knowledge(self, glitch_percent, **meta_knowledge):
