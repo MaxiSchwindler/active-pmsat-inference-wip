@@ -305,12 +305,17 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
                 f"automaton with {automaton.size} states, {len(automaton.get_input_alphabet())} inputs, {len(output_alphabet)} outputs. "
                 f"({automaton_file}). SUL has {glitch_percent}% glitches.")
     alg_kwargs = dict(alphabet=automaton.get_input_alphabet(), sul=sul, print_level=print_level)
+    alg_kwargs.update(algorithm.kwargs_from_meta_knowledge(glitch_percent=glitch_percent))
+
     if oracle is not None:
         if algorithm_name.startswith("APMSL"):
             alg_kwargs['termination_mode'] = EqOracleTermination(oracle)
         else:
             alg_kwargs['eq_oracle'] = oracle
+
     if callable(tm := algorithm.kwargs.get("termination_mode", None)):
+        # if the algorithm has a keyword "termination_mode" defined, which is callable, call that callable with the glitch_percent
+        # TODO: maybe do this via kwargs_from_meta_knowledge?
         algorithm.kwargs["termination_mode"] = tm(glitch_percent)
 
     try:

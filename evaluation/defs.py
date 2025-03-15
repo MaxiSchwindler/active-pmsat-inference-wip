@@ -97,6 +97,8 @@ class AlgorithmWrapper:
             print(f"Exception while calling {self.function.__qualname__} with {my_kwargs}: {e}")
             raise e
 
+    def kwargs_from_meta_knowledge(self, **meta_knowledge):
+        return {}
 
     def old__init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -323,6 +325,7 @@ class GSM(MooreLearningAlgorithm):
 
     default_parameters = dict(
         timeout=2*MINUTES,
+        certainty=0.05,
     )
 
     positional_arguments = ()
@@ -337,3 +340,8 @@ class GSM(MooreLearningAlgorithm):
         'NO_ICP':   {'input_completeness_preprocessing': False},
 
     }
+
+    def kwargs_from_meta_knowledge(self, glitch_percent, **meta_knowledge):
+        return {
+            'failure_rate': glitch_percent / 100,
+        }
