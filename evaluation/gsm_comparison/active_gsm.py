@@ -33,6 +33,7 @@ def run_activeGSM(
     eq_oracle: RobustEqOracleMixin = None,
     use_dis_as_cex: bool = False,
     input_completeness_preprocessing: bool | str = False,
+    cex_processing: bool = True,
     extension_length: int = 2,
     random_steps_per_round: int = 200,
 
@@ -143,12 +144,12 @@ def run_activeGSM(
         #####################################
 
         prev_hyp = previous_hypotheses[-1] if previous_hypotheses else None
-        terminate = False
 
         if eq_oracle is not None:
             logger.debug("Checking for counterexample in eq oracle...")
             cex = eq_oracle.find_cex(hypothesis=hyp, return_outputs=False)
-            terminate = cex is not None
+            terminate = cex is None
+            detailed_learning_info[learning_rounds]["cex"] = cex
             logger.debug(f"Eq oracle found{'' if cex else ' no'} counterexample - {'Terminate' if terminate else 'Continue'}!")
             if cex:
                 logger.debug_ext(f"Counterexample: {cex}")
@@ -156,7 +157,8 @@ def run_activeGSM(
         elif use_dis_as_cex and prev_hyp:
             logger.debug("Using distinguishing sequence with previous hyp as cex. Finding distinguishing sequence...")
             cex = hyp.find_distinguishing_seq(hyp.initial_state, prev_hyp.initial_state, alphabet)
-            terminate = cex is not None
+            terminate = cex is None
+            detailed_learning_info[learning_rounds]["cex"] = cex
             logger.debug(f"{'D' if cex else 'No d'}istinguishing sequence found - {'Terminate' if terminate else 'Continue'}!")
             if cex:
                 logger.debug_ext(f"Counterexample: {cex}")
@@ -193,7 +195,7 @@ def run_activeGSM(
 
             traces = traces + postprocessing_additional_traces_random_walks
 
-        if cex is not None:
+        if cex is not None and cex_processing:
             postprocessing_additional_traces_cex = do_cex_processing(cex, **common_processing_kwargs)
 
             log_and_store_additional_traces(postprocessing_additional_traces_cex,

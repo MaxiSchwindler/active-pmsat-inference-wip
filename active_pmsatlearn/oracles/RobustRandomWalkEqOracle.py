@@ -113,8 +113,9 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
                     return cex_inputs, cex_outputs
                 return cex_inputs
 
-        return None, []
-
+        if return_outputs:
+            return None, []
+        return None
     def reset_counter(self):
         if self.reset_after_cex:
             self.random_steps_done = 0

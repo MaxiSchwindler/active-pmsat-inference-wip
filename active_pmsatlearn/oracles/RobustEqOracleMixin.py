@@ -61,6 +61,7 @@ class RobustEqOracleMixin:
         log(f"{inputs=}\n{outputs_sul=}\n{outputs_hyp=}", level=DETAIL)
         outputs_hyp = tuple(outputs_hyp)
         outputs_sul = tuple(outputs_sul)
+        assert None not in inputs
         assert len(inputs) == len(outputs_sul) == len(outputs_hyp)
         assert outputs_sul != outputs_hyp
         assert outputs_sul[:-1] == outputs_hyp[:-1], f"Output in SUL and HYP should be identical except for last step! {outputs_sul[:-1]=} != {outputs_hyp[:-1]=}"

@@ -27,6 +27,8 @@ def get_prefixes(lst: Sequence):
 def trace_query(sul: SUL, inputs: Sequence[Input]) -> Trace:
     """ Perform a query on the SUL and return the produced trace.
     Returns traces as tuples of tuples, to enable hashability and immutability."""
+    assert None not in inputs, f"input sequence should not contain 'None'; trace_query already adds the initial output"
+
     if hasattr(sul, "traces"):  # TracedMooreSUL
         sul.query(inputs)
         retval = tuple(sul.traces[-1])

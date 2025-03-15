@@ -39,7 +39,9 @@ class RobustPerfectMooreEqOracle(Oracle, RobustEqOracleMixin):
 
         with cm():
             if (dis := mm.find_distinguishing_seq(mm.current_state, hypothesis.current_state, self.alphabet)) is None:
-                return None, []  # no CEX found
+                if return_outputs:
+                    return None, []  # no CEX found
+                return None
 
             assert self.sul.step(None) == hypothesis.step(None)
 
@@ -56,8 +58,7 @@ class RobustPerfectMooreEqOracle(Oracle, RobustEqOracleMixin):
 
                     if return_outputs:
                         return dis, outputs_sul
-                    else:
-                        return dis
+                    return dis
 
             assert False, "Did not find difference in output on performing CEX?"
 
