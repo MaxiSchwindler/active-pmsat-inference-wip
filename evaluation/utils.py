@@ -318,10 +318,13 @@ def print_results_info(results: list[dict]):
     num_returned_model = sum(r['learned_automaton_size'] is not None for r in valid_results)
 
     print(f"Valid results (no exceptions): {num_valid} of {num_results} ({num_valid / num_results * 100:.2f}%)")
-    print(f"Returned models (did not return None): {num_returned_model} of {num_valid} ({num_returned_model / num_valid * 100:.2f}%)")
     if num_valid > 0:
+        print(f"Returned models (did not return None): {num_returned_model} of {num_valid} ({num_returned_model / num_valid * 100:.2f}%)")
         print(f"Learned correctly: {num_learned} of {num_valid} ({num_learned / num_valid * 100:.2f}%)")
         print(f"Bisimilar: {num_bisimilar} of {num_valid} ({num_bisimilar / num_valid * 100:.2f}%)")
+    else:
+        print(f"No returned models!")
+
     if num_timed_out:
         num_timed_out_but_correct = sum(r['timed_out'] and r['learned_correctly'] for r in valid_results)
         num_timed_out_but_bisimilar = sum(r['timed_out'] and r['bisimilar'] for r in valid_results)

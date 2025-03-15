@@ -116,6 +116,7 @@ def run_activePmSATLearn(
     if replay_glitches is True:
         replay_glitches = REPLAY_GLITCHES_DEFAULT
 
+    assert input_completeness_preprocessing in ('random_suffix', 'all_suffixes') or not input_completeness_preprocessing
     assert glitch_processing in ('random_suffix', 'all_suffixes') or not glitch_processing
     assert (isinstance(replay_glitches, Sequence) and all(g in ('original_suffix', 'random_suffix') for g in replay_glitches)) or not replay_glitches
     assert isinstance(random_steps_per_round, int)
@@ -152,7 +153,7 @@ def run_activePmSATLearn(
     #####################################
 
     logger.setLevel({0: logging.CRITICAL, 1: logging.INFO, 2: logging.DEBUG, 2.5: DEBUG_EXT, 3: DEBUG_EXT}[print_level])
-    logger.debug("Running the non-MAT learn algorithm...")
+    logger.debug("Running ActivePMSATLearn...")
     detailed_learning_info = defaultdict(dict)
 
     start_time = time.time()
