@@ -100,7 +100,7 @@ def run_activeGSM(
     #             MAIN LOOP             #
     #####################################
 
-    while True:
+    while not (timed_out := (time.time() >= must_end_by)):
         logger.info(f"Starting learning round {(learning_rounds := learning_rounds + 1)}")
 
         detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
@@ -213,6 +213,7 @@ def run_activeGSM(
     if timed_out:
         logger.warning(
             f"Aborted learning after reaching timeout (start: {start_time:.2f}, now: {time.time():.2f}, timeout: {timeout})")
+        result = previous_hypotheses[-1] if previous_hypotheses else None
 
     hyp = result
     if return_data:
