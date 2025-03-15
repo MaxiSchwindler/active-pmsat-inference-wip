@@ -33,7 +33,7 @@ def run_activeGSM(
     eq_oracle: RobustEqOracleMixin = None,
     use_dis_as_cex: bool = False,
     input_completeness_preprocessing: bool | str = False,
-    cex_processing: bool = True,
+    cex_processing: bool = False,
     extension_length: int = 2,
     random_steps_per_round: int = 200,
 
