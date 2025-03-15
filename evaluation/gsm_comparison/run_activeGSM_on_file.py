@@ -41,7 +41,7 @@ def run_active_gsm(sul, oracle, failure_rate):
         certainty=0.05,
         eq_oracle=oracle,
         extension_length=3,
-        timeout=60,
+        timeout=30,
         print_level=2,
         return_data=True,
     )

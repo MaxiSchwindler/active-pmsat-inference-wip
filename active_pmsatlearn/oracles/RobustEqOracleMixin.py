@@ -32,6 +32,7 @@ class RobustEqOracleMixin:
 
     def find_cex(self, hypothesis, return_outputs=True):
         # TODO: i forgot - does this do anything? compare with __init_subclass__ approach...
+        assert False, "Should not be called, I think"
         eq_query_start = time.time()
         retval = super().find_cex(hypothesis, return_outputs=return_outputs)
         self.eq_query_time += time.time() - eq_query_start
@@ -46,7 +47,6 @@ class RobustEqOracleMixin:
             @wraps(original_find_cex)
             def timed_find_cex(self, *args, **kwargs):
                 eq_query_start = time.time()
-                print(original_find_cex)
                 result = original_find_cex(self, *args, **kwargs)
                 self.eq_query_time += time.time() - eq_query_start
 
