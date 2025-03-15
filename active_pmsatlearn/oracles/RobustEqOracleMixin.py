@@ -30,9 +30,10 @@ class RobustEqOracleMixin:
         self.threshold = math.ceil(validity_threshold * perform_n_times)
         self.eq_query_time = 0
 
-    def find_cex(self, hypothesis, return_output=True):
+    def find_cex(self, hypothesis, return_outputs=True):
+        # TODO: i forgot - does this do anything? compare with __init_subclass__ approach...
         eq_query_start = time.time()
-        retval = super().find_cex(hypothesis, return_output=return_output)
+        retval = super().find_cex(hypothesis, return_outputs=return_outputs)
         self.eq_query_time += time.time() - eq_query_start
         return retval
 
@@ -45,6 +46,7 @@ class RobustEqOracleMixin:
             @wraps(original_find_cex)
             def timed_find_cex(self, *args, **kwargs):
                 eq_query_start = time.time()
+                print(original_find_cex)
                 result = original_find_cex(self, *args, **kwargs)
                 self.eq_query_time += time.time() - eq_query_start
 

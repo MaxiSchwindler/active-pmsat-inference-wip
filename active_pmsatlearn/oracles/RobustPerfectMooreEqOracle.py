@@ -13,7 +13,7 @@ class RobustPerfectMooreEqOracle(Oracle, RobustEqOracleMixin):
         Oracle.__init__(self, alphabet, sul)
         RobustEqOracleMixin.__init__(self)
 
-    def find_cex(self, hypothesis):
+    def find_cex(self, hypothesis, return_outputs=True):
         """
         Return a counterexample (inputs) that displays different behavior on system under learning and
         current hypothesis.
@@ -53,7 +53,11 @@ class RobustPerfectMooreEqOracle(Oracle, RobustEqOracleMixin):
                     assert (
                             index == len(dis) - 1
                     ), f"Difference in output not on last index? {index} != {len(dis) - 1}"
-                    return dis, outputs_sul
+
+                    if return_outputs:
+                        return dis, outputs_sul
+                    else:
+                        return dis
 
             assert False, "Did not find difference in output on performing CEX?"
 
