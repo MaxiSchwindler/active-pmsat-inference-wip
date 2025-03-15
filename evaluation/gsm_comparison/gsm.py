@@ -1,3 +1,7 @@
+"""
+Written by Benjamin von Berg
+"""
+
 from typing import Any
 
 from scipy.stats import binom
@@ -83,5 +87,3 @@ if __name__ == "__main__":
     # ]
     # pmsat_learned = run_pmsat...
     # gsm_learned = run(traces, "moore", failure_rate=0.01, certainty=0.05)
-    # TODO: also run with purge_mismatches=True, did even better on our test set
-    # TODO: compare, e.g., bisimilarity, between real & pmsat_learned and real & gsm_learned

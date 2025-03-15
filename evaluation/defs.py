@@ -14,6 +14,7 @@ import active_pmsatlearn.learnalgo
 from active_pmsatlearn import GlitchThresholdTermination
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
+from evaluation.gsm_comparison.active_gsm import run_activeGSM
 from evaluation.utils import dict_product
 
 DEBUG_WRAPPER = True
@@ -316,3 +317,23 @@ class APMSL(MooreLearningAlgorithm):
                                                                                             first_time=False)},
     }
 
+
+class GSM(MooreLearningAlgorithm):
+    function = run_activeGSM
+
+    default_parameters = dict(
+        timeout=2*MINUTES,
+    )
+
+    positional_arguments = ()
+
+    aliases = {}
+
+    shortcuts = {
+        'PURGE':    {'purge_mismatches': True},
+        'NO_PURGE': {'purge_mismatches': False},
+
+        'ICP':      {'input_completeness_preprocessing': True},
+        'NO_ICP':   {'input_completeness_preprocessing': False},
+
+    }
