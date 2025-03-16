@@ -170,7 +170,7 @@ def run_activeGSM(
             logger.debug(f"Previous and current hyp are{'' if terminate else ' not'} bisimilar - {'Terminate' if terminate else 'Continue'}!")
 
         else:
-            assert learning_rounds == 1
+            # assert learning_rounds == 1  # might not hold with input completeness processing
             logger.debug("No previous hypothesis, no eq oracle; continue")
             cex = None
             terminate = False
