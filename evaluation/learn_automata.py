@@ -383,7 +383,7 @@ def learn_automata(automata_type: str, automata_files: list[str],
                    algorithm_names: Sequence[str], oracle_types: Sequence[str], results_dir: str,
                    learn_num_times: int = 5, max_num_steps: int | None = None,
                    glitch_percents: list[float] = None, glitch_modes: list[str] = None, print_level: int = 0,
-                   use_multiprocessing: bool = True, dry_run: bool = False):
+                   num_processes: int = 3, dry_run: bool = False):
     if not glitch_percents:
         glitch_percents = [0.0]
     if not glitch_modes:
@@ -417,8 +417,8 @@ def learn_automata(automata_type: str, automata_files: list[str],
     write_results_info(results_dir, automata_type, automata_files, algorithm_names, learn_num_times, max_num_steps,
                        oracle_types, results_dir)
 
-    if use_multiprocessing:
-        pool = ProcessPool(max_workers=3)
+    if num_processes > 1:
+        pool = ProcessPool(max_workers=num_processes)
         atexit.register(stop_remaining_jobs, pool)
 
         futures = pool.map(learn_automaton_wrapper, all_combinations_n_times)
@@ -492,6 +492,8 @@ def main():
                         help='Directory to store results in.')
     parser.add_argument('-pl', '--print_level', type=int, default=0,
                         help="Print level for all algorithms. Usually ranges from 0 (nothing) to 3 (everything).")
+    parser.add_argument('-np', '--num_processes', type=int, default=3,
+                        help="Number of processes to run concurrently")
     parser.add_argument('-dr', '--dry-run', action='store_true', help=argparse.SUPPRESS)
 
     if len(sys.argv) > 1:
@@ -529,7 +531,7 @@ def main():
         glitch_percents=args.glitch_percent,
         glitch_modes=args.glitch_mode,
         print_level=args.print_level,
-        use_multiprocessing=True,
+        num_processes=args.num_processes,
         dry_run=args.dry_run
     )
 
