@@ -3,6 +3,7 @@ import builtins
 from functools import wraps
 from contextlib import contextmanager
 
+from aalpy import MooreMachine, MealyMachine
 from aalpy.base import SUL
 
 from active_pmsatlearn.defs import Input, Output, Trace
@@ -77,6 +78,18 @@ def remove_duplicate_traces(traces, additional_traces):
     traces_set = set(traces)
     additional_traces[:] = [trace for trace in additional_traces if trace not in traces_set]
 
+
+def remove_congruent_traces(hyp: MooreMachine | MealyMachine, additional_traces):
+    incongruent_traces = []
+    for trace in additional_traces:
+        assert trace[0] == hyp.initial_state.output
+        inputs = [i for i, o in trace[1:]]
+        outputs_trace = [o for i, o in trace[1:]]
+        outputs_hyp = hyp.execute_sequence(hyp.initial_state, inputs)
+        if outputs_hyp != outputs_trace:
+            incongruent_traces.append(trace)
+
+    additional_traces[:] = incongruent_traces
 
 @contextmanager
 def override_print(override_with=None):

@@ -33,7 +33,8 @@ def run_activePmSATLearn(
     heuristic_function: str | HeuristicFunction = "intermediary",
     timeout: float | None = None,
     deduplicate_traces: bool = True,
-    only_replay_peak_glitches: bool = False,
+    only_replay_peak_glitches: bool = False,  #TODO: combine with replay_glitches (dict?)
+    only_add_incongruent_traces: bool = False,
 
     # pmsat args
     pm_strategy: Literal["lsu", "fm", "rc2"] = "rc2",
@@ -306,6 +307,11 @@ def run_activePmSATLearn(
 
             if deduplicate_traces:
                 remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)  # TODO: does de-duplication affect anything? check!
+
+            if only_add_incongruent_traces:
+                peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+                remove_congruent_traces(peak_hyp, postprocessing_additional_traces_glitch)
+
             log_and_store_additional_traces(postprocessing_additional_traces_glitch, detailed_learning_info[learning_rounds], "glitch")
 
             traces = traces + postprocessing_additional_traces_glitch
@@ -315,6 +321,11 @@ def run_activePmSATLearn(
 
             if deduplicate_traces:
                 remove_duplicate_traces(traces, postprocessing_additional_traces_window_cex)
+
+            if only_add_incongruent_traces:
+                peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+                remove_congruent_traces(peak_hyp, postprocessing_additional_traces_window_cex)
+
             log_and_store_additional_traces(postprocessing_additional_traces_window_cex, detailed_learning_info[learning_rounds], "window cex")
 
             traces = traces + postprocessing_additional_traces_window_cex
@@ -333,6 +344,11 @@ def run_activePmSATLearn(
 
             if deduplicate_traces:
                 remove_duplicate_traces(traces, postprocessing_additional_traces_replay)
+
+            if only_add_incongruent_traces:
+                peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+                remove_congruent_traces(peak_hyp, postprocessing_additional_traces_replay)
+
             log_and_store_additional_traces(postprocessing_additional_traces_replay, detailed_learning_info[learning_rounds], "replay")
 
             traces = traces + postprocessing_additional_traces_replay
@@ -342,6 +358,11 @@ def run_activePmSATLearn(
 
             if deduplicate_traces:
                 remove_duplicate_traces(traces, postprocessing_additional_traces_random_walks)  # TODO: does de-duplication affect anything? check!
+
+            if only_add_incongruent_traces:
+                peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+                remove_congruent_traces(peak_hyp, postprocessing_additional_traces_random_walks)
+
             log_and_store_additional_traces(postprocessing_additional_traces_random_walks, detailed_learning_info[learning_rounds], "random walks")
 
             traces = traces + postprocessing_additional_traces_random_walks
@@ -352,6 +373,11 @@ def run_activePmSATLearn(
 
             if deduplicate_traces:
                 remove_duplicate_traces(traces, postprocessing_additional_traces_state_coverage)
+
+            if only_add_incongruent_traces:
+                peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+                remove_congruent_traces(peak_hyp, postprocessing_additional_traces_state_coverage)
+
             log_and_store_additional_traces(postprocessing_additional_traces_state_coverage, detailed_learning_info[learning_rounds], "transition coverage")
 
             traces = traces + postprocessing_additional_traces_state_coverage
@@ -369,6 +395,11 @@ def run_activePmSATLearn(
 
                 if deduplicate_traces:
                     remove_duplicate_traces(traces, postprocessing_additional_traces_cex)
+
+                if only_add_incongruent_traces:
+                    peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+                    remove_congruent_traces(peak_hyp, postprocessing_additional_traces_cex)
+
                 log_and_store_additional_traces(postprocessing_additional_traces_cex, detailed_learning_info[learning_rounds], "cex")
 
                 traces = traces + postprocessing_additional_traces_cex

@@ -278,7 +278,8 @@ class APMSL(MooreLearningAlgorithm):
         'acahc': 'add_cex_as_hard_clauses',
 
         'ddt': 'deduplicate_traces',
-        'orpg': 'only_replay_peak_glitches'
+        'orpg': 'only_replay_peak_glitches',
+        'oait': 'only_add_incongruent_traces',
     }
 
     shortcuts = {
