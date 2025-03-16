@@ -254,16 +254,22 @@ def multiple_bar_charts(df: pd.DataFrame, keys: Sequence[str], agg_method: str |
 
 def bar_chart_per_algorithm(df: pd.DataFrame, key: str, agg_method: str | Callable = "mean",
                             only_if=None, title: str = None, group_by: Sequence[str] = None):
+    if group_by is None:
+        group_by = []
     group_by = list(g for g in group_by).insert(0, ALGORITHM_KEY)
     bar_chart(df, key, agg_method, only_if, title, group_by)
 
 
 def bar_chart_per_algorithm_and_oracle(df: pd.DataFrame, key: str, agg_method: str | Callable = "mean",
                             only_if=None, title: str = None, group_by: Sequence[str] = None):
+    if group_by is None:
+        group_by = []
     group_by = [ALGORITHM_KEY, ORACLE_KEY] + list(g for g in group_by)
     bar_chart(df, key, agg_method, only_if, title, group_by)
 
 
 def multiple_bar_charts_per_algorithm_and_oracle(df: pd.DataFrame, keys: Sequence[str], group_by: Sequence[str] = None, **kwargs):
+    if group_by is None:
+        group_by = []
     group_by = [ALGORITHM_KEY, ORACLE_KEY] + list(g for g in group_by)
     multiple_bar_charts(df, keys, group_by=group_by, **kwargs)
