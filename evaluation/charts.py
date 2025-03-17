@@ -35,13 +35,24 @@ def get_all_possible_values_for_key(results: list[dict], key: Key, only_if=lambd
     return sorted(list(set(get_val(entry, key) for entry in results if only_if(entry))))
 
 
-def load_results(results_dir: str) -> list[dict]:
+def remove_traces(d: dict):
+    if "detailed_learning_info" in d and isinstance(d["detailed_learning_info"], dict):
+        for round_data in d["detailed_learning_info"].values():
+            if isinstance(round_data, dict):
+                round_data.pop("traces_used_to_learn", None)
+    return d
+
+
+def load_results(results_dir: str, remove_traces_used_to_learn=True) -> list[dict]:
     results = []
     for filename in os.listdir(results_dir):
         if filename.startswith('info') or not filename.endswith(".json"):
             continue
         with open(os.path.join(results_dir, filename), "r") as f:
-            results.append(json.load(f))
+            if remove_traces_used_to_learn:
+                results.append(json.load(f, object_hook=remove_traces))
+            else:
+                results.append(json.load(f))
         results[-1]["results_file"] = filename
     return results
 

@@ -37,6 +37,7 @@ def run_activeGSM(
     extension_length: int = 2,
     random_steps_per_round: int = 200,
 
+    store_traces_used_to_learn: bool = False,
     timeout: float | None = None,
     return_data: bool = True,
     print_level: int | None = 2,
@@ -111,8 +112,8 @@ def run_activeGSM(
         #####################################
 
         hyp: SupportedAutomaton = gsm.run(traces, **common_gsm_kwargs)
-        traces_used_to_learn = copy.deepcopy(traces)
-        detailed_learning_info[learning_rounds]["traces_used_to_learn"] = traces_used_to_learn
+        if store_traces_used_to_learn:
+            detailed_learning_info[learning_rounds]["traces_used_to_learn"] = copy.deepcopy(traces)
 
         detailed_learning_info[learning_rounds]["hyp"] = str(hyp)
 
