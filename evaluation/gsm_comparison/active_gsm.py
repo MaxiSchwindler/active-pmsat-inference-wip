@@ -37,7 +37,7 @@ def run_activeGSM(
     extension_length: int = 2,
     random_steps_per_round: int = 200,
 
-    store_traces_used_to_learn: bool = False,
+    return_traces: bool = False,
     timeout: float | None = None,
     return_data: bool = True,
     print_level: int | None = 2,
@@ -112,7 +112,7 @@ def run_activeGSM(
         #####################################
 
         hyp: SupportedAutomaton = gsm.run(traces, **common_gsm_kwargs)
-        if store_traces_used_to_learn:
+        if return_traces:
             detailed_learning_info[learning_rounds]["traces_used_to_learn"] = copy.deepcopy(traces)
 
         detailed_learning_info[learning_rounds]["hyp"] = str(hyp)
@@ -127,7 +127,7 @@ def run_activeGSM(
                                                                                   **common_processing_kwargs)
 
             log_and_store_additional_traces(preprocessing_additional_traces, detailed_learning_info[learning_rounds],
-                                            "input completeness", processing_step="pre")
+                                            "input completeness", processing_step="pre", store=return_traces)
 
             if preprocessing_additional_traces:
                 traces += preprocessing_additional_traces
@@ -192,7 +192,7 @@ def run_activeGSM(
                                                                             **common_processing_kwargs)
 
             log_and_store_additional_traces(postprocessing_additional_traces_random_walks,
-                                            detailed_learning_info[learning_rounds], "random walks")
+                                            detailed_learning_info[learning_rounds], "random walks", store=return_traces)
 
             traces = traces + postprocessing_additional_traces_random_walks
 
@@ -200,7 +200,7 @@ def run_activeGSM(
             postprocessing_additional_traces_cex = do_cex_processing(cex, **common_processing_kwargs)
 
             log_and_store_additional_traces(postprocessing_additional_traces_cex,
-                                            detailed_learning_info[learning_rounds], "cex")
+                                            detailed_learning_info[learning_rounds], "cex", store=return_traces)
 
             traces = traces + postprocessing_additional_traces_cex
 

@@ -450,11 +450,13 @@ def run_activePmSATLearn(
 
 
 def log_and_store_additional_traces(additional_traces: list[Trace], current_learning_info: dict, name: str, *,
-                                    processing_step: str = 'post'):
+                                    processing_step: str = 'post', store: bool = True):
     logger.debug(f"Produced {len(additional_traces)} additional traces from {name} processing")
     logger.debug_ext(f"Additional traces from {name} processing: {additional_traces}")
     key = f"additional_traces_{processing_step}processing_{'_'.join(name.split(' '))}"
-    current_learning_info[key] = additional_traces
+    current_learning_info[f"num_{key}"] = len(additional_traces)
+    if store:
+        current_learning_info[key] = additional_traces
 
 
 @concurrent.process(daemon=False)
