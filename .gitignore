@@ -79,4 +79,5 @@ venv2/
 **/many_results*/
 **/some_results*/
 /generated_data/
-/generated_data_1/
+/generated_data_*/
+/wip_learning_results_server
