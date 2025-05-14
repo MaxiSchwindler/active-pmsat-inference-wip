@@ -33,10 +33,12 @@ def get_oracle(oracle_name: str, sul):
 def run_apmsl(sul, oracle):
     """Run APMSL on the given file and return the learned model and info."""
     kwargs = {}
+
+    # default termination mode if no oracle is given # TODO make param
+    kwargs["termination_mode"] = GlitchThresholdTermination(1.0)
+
     if oracle is not None:
         kwargs["termination_mode"] = EqOracleTermination(oracle)
-
-    kwargs["termination_mode"] = GlitchThresholdTermination(1.0)
 
     return run_activePmSATLearn(
         alphabet=sul.automaton.get_input_alphabet(),

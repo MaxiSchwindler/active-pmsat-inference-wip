@@ -2,7 +2,7 @@ import copy
 import itertools
 import logging
 import multiprocessing
-from typing import Literal
+from typing import Literal, Optional
 
 from pebble import concurrent
 
@@ -197,7 +197,6 @@ def run_activePmSATLearn(
     while True:
         logger.info(f"Starting learning round {(learning_rounds := learning_rounds + 1)}")
 
-        min_num_states = max(min_num_states, get_num_outputs(traces))
         detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
         detailed_learning_info[learning_rounds]["sliding_window_start"] = min_num_states
 
@@ -274,23 +273,17 @@ def run_activePmSATLearn(
         #            EVALUATING             #
         #####################################
 
-        action = decide_next_action(hypotheses, scores,
-                                    previous_hypotheses, previous_scores,
-                                    current_min_num_states=min_num_states,
-                                    traces_used_to_learn=traces,
-                                    termination_mode=termination_mode,
-                                    current_learning_info=detailed_learning_info[learning_rounds],
-                                    timed_out=timed_out)
+        terminate, hyp, additional_data = should_terminate(hypotheses, scores,
+                                                                  previous_hypotheses, previous_scores,
+                                                                  current_min_num_states=min_num_states,
+                                                                  traces_used_to_learn=traces,
+                                                                  termination_mode=termination_mode,
+                                                                  current_learning_info=detailed_learning_info[learning_rounds],
+                                                                  timed_out=timed_out)
 
-        match action:
-            case Terminate(hyp, hyp_stoc, pmsat_info):
-                result = hyp, hyp_stoc, pmsat_info
-                break
-            case Continue():
-                if action.next_min_num_states is not None:
-                    min_num_states = action.next_min_num_states
-            case _:
-                raise ValueError(f"Unexpected action {action}")
+        if terminate:
+            result = hyp
+            break
 
         #####################################
         #          POST-PROCESSING          #
@@ -383,8 +376,8 @@ def run_activePmSATLearn(
             traces = traces + postprocessing_additional_traces_state_coverage
 
         if uses_eq_oracle:
-            eq_oracle_cex = action.additional_data["cex"]
-            eq_oracle_cex_outputs = action.additional_data["cex_outputs"]
+            eq_oracle_cex = additional_data["cex"]
+            eq_oracle_cex_outputs = additional_data["cex_outputs"]
             eq_oracle_cex_trace = traces[0][0], *zip(eq_oracle_cex, eq_oracle_cex_outputs)
 
             assert eq_oracle_cex is not None, f"Must have cex during postprocessing when using EqOracleTermination!"
@@ -425,6 +418,7 @@ def run_activePmSATLearn(
         if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
             logger.warning(f"No additional traces were produced during this round!")
 
+        min_num_states = calculate_next_min_num_states(hypotheses, scores, get_num_outputs(traces))
         previous_hypotheses = hypotheses
         previous_scores = scores
 
@@ -507,6 +501,28 @@ def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: 
     return learned
 
 
+def calculate_next_min_num_states(hypotheses, scores, min_allowed_num_states):
+    sliding_window_size = len(hypotheses)
+    current_min_num_states = min(hypotheses.keys())
+    peak_index = find_index_of_absolute_peak(scores)
+
+    if is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states):
+        return current_min_num_states
+    else:
+        mid_index = sliding_window_size // 2
+        diff_to_mid_index = peak_index - mid_index
+        min_num_states = current_min_num_states + diff_to_mid_index
+        if min_num_states >= min_allowed_num_states:
+            logger.debug(f"Moving start of sliding window to {min_num_states} states to position peak at the midpoint.")
+        else:
+            logger.debug(
+                f"Should move start of sliding window to {min_num_states} states to position peak at the midpoint, "
+                f"but there are too many outputs in the traces ({min_allowed_num_states}); "
+                f"setting min_num_states to {min_allowed_num_states}")
+            min_num_states = min_allowed_num_states
+        return min_num_states
+
+
 def find_index_of_unimodal_peak(scores: dict[int, float]) -> int | None:
     if scores is None:
         return None
@@ -535,12 +551,12 @@ def get_absolute_peak_hypothesis(hypotheses: HypothesesWindow, scores: dict[int,
     return hypotheses[peak_num_states]
 
 
-def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dict[int, float],
-                       previous_hypotheses: HypothesesWindow | None, previous_scores: dict[int, float] | None,
-                       current_min_num_states: int, traces_used_to_learn: list[Trace],
-                       termination_mode: TerminationMode,
-                       current_learning_info: dict[str, Any],
-                       timed_out: bool) -> Action:
+def should_terminate(current_hypotheses: HypothesesWindow, current_scores: dict[int, float],
+                     previous_hypotheses: HypothesesWindow | None, previous_scores: dict[int, float] | None,
+                     current_min_num_states: int, traces_used_to_learn: list[Trace],
+                     termination_mode: TerminationMode,
+                     current_learning_info: dict[str, Any],
+                     timed_out: bool) -> tuple[bool, Optional[PmSatReturnTuple], Optional[dict]]:
     peak_index = current_learning_info["peak_index"] = find_index_of_absolute_peak(current_scores)
     peak_num_states = current_learning_info["peak_num_states"] = get_num_states_from_scores_index(current_scores, peak_index)
 
@@ -556,15 +572,16 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
             logger.debug(f"Since the PMSAT-LEARN call for the previous peak num states ({prev_peak_num_states}) timed out, "
                          f"a comparison of the remaining (not timed-out) current hypotheses does not make sense. "
                          f"Terminating with previous peak hypothesis.")
-            return Terminate(*previous_hypotheses[prev_peak_num_states])
+            hyp = previous_hypotheses[prev_peak_num_states]
         else:
             logger.debug(f"Some PMSAT-LEARN calls timed out, but the previous peak num states hypothesis ({prev_peak_num_states} states) "
                          f"was successfully learnt again with more data; therefore, return the peak hypothesis "
                          f"({peak_num_states} states) of the current window.")
-            return Terminate(*current_hypotheses[peak_num_states])
+            hyp = current_hypotheses[peak_num_states]
+        return True, hyp, None
 
     # special case for MAT-mode (eq oracle): ask directly whether current peak hypothesis is correct
-    continue_kwargs = dict()
+    additional_data = dict()
     if isinstance(termination_mode, EqOracleTermination):
         eq_oracle = termination_mode.eq_oracle
         logger.debug(f"Asking eq oracle {type(eq_oracle).__name__} for a counterexample...")
@@ -573,41 +590,28 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
         cex, cex_outputs = eq_oracle.find_cex(abs_peak_hyp[0])
         if cex is None:
             logger.debug(f"Oracle did not find counterexample. Terminating.")
-            return Terminate(*abs_peak_hyp)
+            return True, abs_peak_hyp, None
         else:
             logger.debug(f"Oracle found counterexample. Continuing.")
             logger.debug_ext(f"Counterexample: {cex}")
-            continue_kwargs["additional_data"] = dict(cex=cex, cex_outputs=cex_outputs)
+            additional_data = dict(cex=cex, cex_outputs=cex_outputs)
 
     if previous_hypotheses is None:
         logger.debug("No previous hypotheses; learn again with same window.")
-        return Continue(**continue_kwargs)
+        return False, None, additional_data
 
     logger.debug(f"Found peak at index {peak_index} of sliding window <{min(current_scores.keys())}-{max(current_scores.keys())}>; "
                  f"i.e. at {peak_num_states} states")
     logger.debug(f"Previous peak was at index {prev_peak_index} of sliding window <{min(previous_scores.keys())}-{max(previous_scores.keys())}>; "
                  f"i.e. at {prev_peak_num_states} states")
 
-    currently_positioned_correctly = is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states)
-
-    if not currently_positioned_correctly:
-        mid_index = sliding_window_size // 2
-        diff_to_mid_index = peak_index - mid_index
-        min_num_states = current_min_num_states + diff_to_mid_index
-        if min_num_states >= min_allowed_num_states:
-            logger.debug(f"Moving start of sliding window to {min_num_states} states to position peak at the midpoint.")
-        else:
-            logger.debug(
-                f"Should move start of sliding window to {min_num_states} states to position peak at the midpoint, "
-                f"but there are too many outputs in the traces ({min_allowed_num_states}); setting min_num_states to {min_allowed_num_states}")
-            min_num_states = min_allowed_num_states
-
-        return Continue(next_min_num_states=min_num_states, **continue_kwargs)
+    if not is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states):
+        return False, None, additional_data
 
     # TODO do we want this?
     if prev_peak_num_states != peak_num_states:
         logger.debug(f"Continue learning with the same window, since the last peak was at a different number of states ({prev_peak_num_states})")
-        return Continue(**continue_kwargs)
+        return False, None, additional_data
 
     peak_hyp, peak_hyp_stoc, peak_pmsat_info = current_hypotheses[peak_num_states]
     prev_peak_hyp, prev_peak_hyp_stoc, prev_peak_pmsat_info = previous_hypotheses[prev_peak_num_states]
@@ -620,19 +624,19 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
             if percent_glitches <= threshold:
                 if termination_mode.first_time:
                     logger.debug(msg.format("less") + "Terminating the first time we are below threshold.")
-                    return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                    return True, (peak_hyp, peak_hyp_stoc, peak_pmsat_info), None
                 else:
                     prev_percent_glitches = prev_peak_pmsat_info["percent_glitches"]
                     msg = msg.format("less") + f"Last peak hypothesis had {prev_percent_glitches}%. "
                     if prev_percent_glitches <= threshold:
                         logger.debug(msg + "Terminating.")
-                        return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                        return True, (peak_hyp, peak_hyp_stoc, peak_pmsat_info), None
                     else:
                         logger.debug(msg + "Continuing.")
-                        return Continue(**continue_kwargs)
+                        return False, None, additional_data
             else:
                 logger.debug(msg.format("more"))
-                return Continue(**continue_kwargs)
+                return False, None, additional_data
 
         case GlitchImprovementTermination():
             curr_percent_glitches = peak_pmsat_info["percent_glitches"]
@@ -640,10 +644,10 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
             msg = f"Peak hypothesis has {curr_percent_glitches}% glitches, while previous peak hypothesis had {prev_percent_glitches}% glitches. "
             if prev_percent_glitches <= curr_percent_glitches:
                 logger.debug(msg + "Terminating.")
-                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                return True, (peak_hyp, peak_hyp_stoc, peak_pmsat_info), None
             else:
                 logger.debug(msg + "Continuing with additional traces.")
-                return Continue(**continue_kwargs)
+                return False, None, additional_data
 
         case ApproximateScoreImprovementTermination():
             curr_approx_score = approximate_advanced_heuristic(peak_hyp, peak_pmsat_info, traces_used_to_learn)
@@ -651,10 +655,10 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
             msg = f"Peak hypothesis has approximate score of {curr_approx_score}  while previous peak hypothesis has {prev_approx_score}. "
             if prev_approx_score >= curr_approx_score:
                 logger.debug(msg + "Terminating.")
-                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                return True, (peak_hyp, peak_hyp_stoc, peak_pmsat_info), None
             else:
                 logger.debug(msg + "Continuing with additional traces.")
-                return Continue(**continue_kwargs)
+                return False, None, additional_data
 
         case ScoreImprovementTermination():
             curr_score = current_scores[peak_num_states]
@@ -662,24 +666,24 @@ def decide_next_action(current_hypotheses: HypothesesWindow, current_scores: dic
             msg = f"Peak hypothesis has score of {curr_score} while previous peak hypothesis has {prev_score}. "
             if prev_score >= curr_score:
                 logger.debug(msg + "Terminating.")
-                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                return True, (peak_hyp, peak_hyp_stoc, peak_pmsat_info), None
             else:
                 logger.debug(msg + "Continuing with additional traces.")
-                return Continue(**continue_kwargs)
+                return False, None, additional_data
 
         case HypothesisDoesNotChangeTermination():
             dis = peak_hyp.find_distinguishing_seq(peak_hyp.initial_state, prev_peak_hyp.initial_state, peak_hyp.get_input_alphabet())
             if dis is None:
                 logger.debug(f"No distinguishing sequence between current hypothesis and previous hypothesis found. Terminating")
-                return Terminate(peak_hyp, peak_hyp_stoc, peak_pmsat_info)
+                return True, (peak_hyp, peak_hyp_stoc, peak_pmsat_info), None
             else:
                 logger.debug(f"Found distinguishing sequence between current and previous hypothesis. Continue.")
-                return Continue(**continue_kwargs)
+                return False, None, additional_data
 
         case EqOracleTermination(eq_oracle):
             # if the eq oracle had no counterexample, we would have already returned
-            assert 'cex' in continue_kwargs.get('additional_data', {})
-            return Continue(**continue_kwargs)
+            assert 'cex' in additional_data.get('additional_data', {})
+            return False, None, additional_data
 
         case _:
             raise NotImplementedError(f"Termination mode {type(termination_mode).__name__} not implemented!")

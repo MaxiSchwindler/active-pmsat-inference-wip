@@ -19,28 +19,6 @@ HeuristicFunction: TypeAlias = Callable[[SupportedAutomaton, PmSatLearningInfo, 
 
 
 #####################################
-#              ACTIONS              #
-#####################################
-
-
-class Action(ABC):
-    pass
-
-
-@dataclass
-class Terminate(Action):
-    hyp: PossibleHypothesis
-    hyp_stoc: PossibleHypothesis
-    pmsat_info: PmSatLearningInfo
-
-
-@dataclass
-class Continue(Action):
-    next_min_num_states: int = None
-    additional_data: Any = None
-
-
-#####################################
 #        TERMINATION MODES          #
 #####################################
 
