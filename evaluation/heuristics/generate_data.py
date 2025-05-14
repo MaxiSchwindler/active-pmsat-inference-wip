@@ -4,6 +4,7 @@ import csv
 import itertools
 import json
 import os
+import shlex
 import shutil
 import sys
 import uuid
@@ -21,7 +22,7 @@ from active_pmsatlearn.utils import trace_query, get_num_outputs, timeit
 from active_pmsatlearn.defs import Trace
 from evaluation.generate_automata import add_automata_generation_arguments
 from evaluation.learn_automata import get_all_automata_files_from_dir, get_generated_automata_files_to_learn
-from evaluation.utils import parse_range, new_file, GlitchingSUL
+from evaluation.utils import parse_range, new_file, GlitchingSUL, get_args_from_input
 from pmsatlearn import run_pmSATLearn
 
 logger = get_logger(__name__)
@@ -92,7 +93,7 @@ def learn_automaton_and_calculate_metrics(automaton_file: str, *,
                                           glitch_percentage=0,
                                           results_dir="generated_data") -> list[dict[str, float]]:
     # create directory for this automaton's result and copy automaton file there
-    results_dir = Path(results_dir) / Path(automaton_file).stem
+    results_dir = Path(results_dir) / f"{Path(automaton_file).stem}_{uuid.uuid4().hex}"
     os.makedirs(results_dir, exist_ok=False)
     automaton_file = shutil.copyfile(automaton_file, results_dir/"RealModel.dot")
 
@@ -180,13 +181,13 @@ def write_metrics_to_csv(metrics: list[dict[str, float]], csv_file):
 
 
 @timeit("learning automata and calculating metrics")
-def learn_automata_and_calculate_metrics(automata_files: list[str], multiprocessing=True, results_dir="generated_data", **kwargs) -> list[dict[str, float]]:
-    results_dir = new_file(results_dir)
+def learn_automata_and_calculate_metrics(automata_files: list[str], multiprocessing=True, results_dir="generated_data", learn_num_times=1, **kwargs) -> list[dict[str, float]]:
     if multiprocessing:
         pool = pebble.ProcessPool(max_workers=4)
         def generator():
             for a in automata_files:
-                yield {"automaton_file": a, "results_dir": results_dir} | kwargs
+                for _ in range(learn_num_times):
+                    yield {"automaton_file": a, "results_dir": results_dir} | kwargs
 
         futures = pool.map(learn_automaton_and_calculate_metrics_mp, generator())
         metrics = []
@@ -195,7 +196,8 @@ def learn_automata_and_calculate_metrics(automata_files: list[str], multiprocess
     else:
         metrics = []
         for a in automata_files:
-            metrics.extend(learn_automaton_and_calculate_metrics(a, results_dir=results_dir, **kwargs))
+            for _ in range(learn_num_times):
+                metrics.extend(learn_automaton_and_calculate_metrics(a, results_dir=results_dir, **kwargs))
 
     csv_file = os.path.join(results_dir, "complete_data.csv")
     write_metrics_to_csv(metrics, csv_file)
@@ -203,68 +205,59 @@ def learn_automata_and_calculate_metrics(automata_files: list[str], multiprocess
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Generate data. Learn the same automaton with PMSATLearn, '
+                                                 'with different numbers of states, and collect the results.')
+    parser.add_argument('-dmin', '--diff_min_states', type=int, default=3,
+                        help='Difference of minimum number states to learn to real number of states')
+    parser.add_argument('-dmax', '--diff_max_states', type=int, default=3,
+                        help='Difference of maximum number states to learn to real number of states')
+    parser.add_argument('-el', '--extension_length', type=int, default=3,
+                        help='Extension length to produce traces')
+    parser.add_argument('-gp', '--glitch_percent', type=float, default=0,
+                        help='Percentage of glitches')
+
+    # TODO: refactor to --files like in learn_automata.py
+    parser.add_argument('--learn_all_automata_from_dir', type=str,
+                        help='Learn all automata from a directory. If this directory is specified, '
+                             'all arguments concerning automata generation except -t are ignored. '
+                             'You have to ensure yourself that all of these automata are instances of the '
+                             'automaton type given with -t.')
+    add_automata_generation_arguments(parser)
+    parser.add_argument('--learn-num-times', type=int, default=1,
+                        help="How many times to learn the same automaton")
+    parser.add_argument('--reuse', type=bool, default=True,
+                        help="Whether to reuse existing automata or to force generation of new ones")
+    parser.add_argument('-mp', '--multiprocessing', type=bool, default=True,
+                        help="Whether to use multiprocessing or not")
+    parser.add_argument('-rd', '--results_dir', type=str, default="generated_data",
+                        help="Directory to store results in")
+
     if len(sys.argv) > 1:
-        parser = argparse.ArgumentParser(description='Generate data. Learn the same automaton with PMSATLearn, '
-                                                     'with different numbers of states, and collect the results.')
-        parser.add_argument('-dmin', '--diff_min_states', type=int, default=3,
-                            help='Difference of minimum number states to learn to real number of states')
-        parser.add_argument('-dmax', '--diff_max_states', type=int, default=3,
-                            help='Difference of maximum number states to learn to real number of states')
-        parser.add_argument('-el', '--extension_length', type=int, default=3,
-                            help='Extension length to produce traces')
-        parser.add_argument('-gp', '--glitch_percent', type=float, default=0,
-                            help='Percentage of glitches')
-
-        # TODO: refactor to --files like in learn_automata.py
-        parser.add_argument('--learn_all_automata_from_dir', type=str,
-                            help='Learn all automata from a directory. If this directory is specified, '
-                                 'all arguments concerning automata generation except -t are ignored. '
-                                 'You have to ensure yourself that all of these automata are instances of the '
-                                 'automaton type given with -t.')
-        add_automata_generation_arguments(parser)
-        parser.add_argument('--reuse', type=bool, default=True,
-                            help="Whether to reuse existing automata or to force generation of new ones")
-        parser.add_argument('-mp', '--multiprocessing', type=bool, default=True,
-                            help="Whether to use multiprocessing or not")
-        parser.add_argument('-rd', '--results_dir', type=str, default="generated_data",
-                            help="Directory to store results in")
         args = parser.parse_args()
-
-        diff_min_states = args.diff_min_states
-        diff_max_states = args.diff_max_states
-        extension_length = args.extension_length
-        glitch_percent = args.glitch_percent
-
-        learn_from_dir = args.learn_all_automata_from_dir
-        num_automata_per_combination = args.num_automata_per_combination
-        automata_type = args.type
-        num_states = args.num_states
-        num_inputs = args.num_inputs
-        num_outputs = args.num_outputs
-        generated_automata_dir = args.generated_automata_dir
-        reuse_existing_automata = args.reuse
-        use_multiprocessing = args.multiprocessing
-        results_dir = args.results_dir
-
     else:
-        # TODO: remove/refactor like learn_automata.py
-        diff_min_states = int(input("Difference of minimum number states to learn to real number of states: "))
-        diff_max_states = int(input("Difference of maximum number states to learn to real number of states: "))
-        extension_length = int(input("Extension length: "))
-        glitch_percent = float(input("Glitch percentage: "))
+        print("No arguments provided. Switching to interactive mode (experimental).")
+        args = get_args_from_input(parser)
 
-        learn_from_dir = bool(input("Learn all automata from a directory? (y/n) (default: no): ") in ("y", "Y", "yes"))
-        if learn_from_dir:
-            learn_from_dir = input(f"Enter directory (all contained automata must be moore machines): ")
-        else:
-            num_automata_per_combination = int(input("Enter number of automata to generate/learn (default: 5): ") or 5)
-            num_states = parse_range(input("Enter number of states per automaton: "))
-            num_inputs = parse_range(input("Enter number of inputs per automaton: "))
-            num_outputs = parse_range(input("Enter number of outputs per automaton: "))
-            generated_automata_dir = input("Enter directory to store generated automata in: ") or "generated_automata"
-            reuse_existing_automata = input("Reuse existing automata? (y/n) (default: yes): ") in ("y", "Y", "yes", "")
-        use_multiprocessing = input("Use multiprocessing? (y/n) (default: yes): ") in ("y", "Y", "yes", "")
-        results_dir = input("Enter directory to store results in: ") or "generated_data"
+    diff_min_states = args.diff_min_states
+    diff_max_states = args.diff_max_states
+    extension_length = args.extension_length
+    glitch_percent = args.glitch_percent
+
+    learn_from_dir = args.learn_all_automata_from_dir
+    num_automata_per_combination = args.num_automata_per_combination
+    automata_type = args.type
+    num_states = args.num_states
+    num_inputs = args.num_inputs
+    num_outputs = args.num_outputs
+    generated_automata_dir = args.generated_automata_dir
+    reuse_existing_automata = args.reuse
+    use_multiprocessing = args.multiprocessing
+    results_dir = new_file(args.results_dir)
+    learn_num_times = args.learn_num_times
+
+    os.makedirs(results_dir, exist_ok=False)
+    with open(Path(results_dir) / "call.txt", 'w') as f:
+        f.write(' '.join(shlex.quote(arg) for arg in sys.argv) + '\n')
 
     if learn_from_dir:
         logger.warning("Learning from directory has not been tested; confirm manually!")
@@ -280,7 +273,8 @@ def main():
                                          diff_max_states=diff_max_states,
                                          extension_length=extension_length,
                                          glitch_percentage=glitch_percent,
-                                         results_dir=results_dir,)
+                                         results_dir=results_dir,
+                                         learn_num_times=learn_num_times)
 
 
 
