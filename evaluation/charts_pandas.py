@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from evaluation import charts
 
 ALGORITHM_KEY = "algorithm_name"
 ORACLE_KEY = "oracle"
@@ -47,16 +48,23 @@ def is_valid_result(result: pd.Series) -> bool:
     return pd.isna(result.get("exception", np.nan))
 
 
-def load_results(results_dir: str) -> pd.DataFrame:
+def load_results(results_dir: str, remove_traces_used_to_learn=True, is_server_results=False) -> pd.DataFrame:
     """Load all JSON results into a Pandas DataFrame."""
     data = []
     for filename in os.listdir(results_dir):
         if filename.startswith('info') or not filename.endswith(".json"):
             continue
         with open(os.path.join(results_dir, filename), "r") as f:
-            result = json.load(f)
-            result["results_file"] = filename
-            data.append(result)
+            if remove_traces_used_to_learn:
+                res = json.load(f, object_hook=charts.remove_traces)
+            else:
+                res = json.load(f)
+
+            if is_server_results:
+                charts.replace_server_prefix(res, Path(results_dir))
+
+            data.append(res)
+        data[-1]["results_file"] = filename
     return pd.DataFrame(data)
 
 
@@ -150,7 +158,7 @@ def bar_chart(df: pd.DataFrame, key: str, agg_method: str | Callable = "mean",
 
     # format x ticks
     formatted_xticks = [
-        " ".join(group_by_formatter(col, val) for col, val in zip(group_by, index))
+        " ".join(group_by_formatter(col, val) for col, val in zip(group_by, index if isinstance(index, tuple) else (index,)))
         for index, _ in pivot_df.iterrows()
     ]
     ax.set_xticklabels(formatted_xticks)

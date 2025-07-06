@@ -214,7 +214,7 @@ def calculate_accuracy(true_outputs, learned_outputs):
     return strong, medium, weak
 
 
-@timeit("Calculating statistics")
+# @timeit("Calculating statistics")
 def calculate_statistics(original_automaton: MooreMachine, learned_automaton: MooreMachine, extended_stats=False):
     input_alphabet = original_automaton.get_input_alphabet()
     extension_length = len(original_automaton.states) + 1

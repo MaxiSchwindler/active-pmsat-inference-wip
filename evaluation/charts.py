@@ -4,11 +4,13 @@ import os
 from collections import defaultdict
 from collections.abc import Sequence, Callable
 from functools import cmp_to_key
+from pathlib import Path
 from typing import TypeAlias, Any
 
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
+import pandas as pd
 
 from active_pmsatlearn.learnalgo import get_total_num_additional_traces
 
@@ -43,17 +45,34 @@ def remove_traces(d: dict):
     return d
 
 
-def load_results(results_dir: str, remove_traces_used_to_learn=True) -> list[dict]:
+def replace_server_prefix(d: dict, results_dir: Path, server_prefix: str = '/home/satuser/active-pmsat-inference-wip') -> None:
+    new_prefix = results_dir.absolute().parent.as_posix()
+    for k in d.keys():
+        if isinstance(d[k], str) and d[k].startswith(server_prefix):
+            d[k] = new_prefix + d[k][len(server_prefix):]
+        elif isinstance(d[k], dict):
+            replace_server_prefix(d[k], results_dir, server_prefix)
+
+
+def load_results(results_dir: str, remove_traces_used_to_learn=True, is_server_results=False, as_pandas=False) -> list[dict] | tuple[list[dict], pd.DataFrame]:
     results = []
     for filename in os.listdir(results_dir):
         if filename.startswith('info') or not filename.endswith(".json"):
             continue
         with open(os.path.join(results_dir, filename), "r") as f:
             if remove_traces_used_to_learn:
-                results.append(json.load(f, object_hook=remove_traces))
+                res = json.load(f, object_hook=remove_traces)
             else:
-                results.append(json.load(f))
+                res = json.load(f)
+
+            if is_server_results:
+                replace_server_prefix(res, Path(results_dir))
+
+            results.append(res)
         results[-1]["results_file"] = filename
+
+    if as_pandas:
+        return results, pd.DataFrame(results)
     return results
 
 
