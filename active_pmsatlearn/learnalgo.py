@@ -274,12 +274,12 @@ def run_activePmSATLearn(
         #####################################
 
         terminate, hyp, additional_data = should_terminate(hypotheses, scores,
-                                                                  previous_hypotheses, previous_scores,
-                                                                  current_min_num_states=min_num_states,
-                                                                  traces_used_to_learn=traces,
-                                                                  termination_mode=termination_mode,
-                                                                  current_learning_info=detailed_learning_info[learning_rounds],
-                                                                  timed_out=timed_out)
+                                                           previous_hypotheses, previous_scores,
+                                                           current_min_num_states=min_num_states,
+                                                           traces_used_to_learn=traces,
+                                                           termination_mode=termination_mode,
+                                                           current_learning_info=detailed_learning_info[learning_rounds],
+                                                           timed_out=timed_out)
 
         if terminate:
             result = hyp

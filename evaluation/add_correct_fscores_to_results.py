@@ -15,20 +15,20 @@ from evaluation.utils import new_file
 from f_similarity import stochastic_conformance
 
 # v2:
-# CORRECT_PRECISION_NAME = "Precision_v2"
-# CORRECT_RECALL_NAME = "Recall_v2"
-# CORRECT_FSCORE_NAME = "F-Score_v2"
-#
-# NUM_SAMPLES = 100_000
-# RESET_PROB = 0.09
-
-# v3:
-CORRECT_PRECISION_NAME = "Precision_v3"
-CORRECT_RECALL_NAME = "Recall_v3"
-CORRECT_FSCORE_NAME = "F-Score_v3"
+CORRECT_PRECISION_NAME = "Precision_v2"
+CORRECT_RECALL_NAME = "Recall_v2"
+CORRECT_FSCORE_NAME = "F-Score_v2"
 
 NUM_SAMPLES = 100_000
-RESET_PROB = 0.15
+RESET_PROB = 0.09
+
+# v3:
+# CORRECT_PRECISION_NAME = "Precision_v3"
+# CORRECT_RECALL_NAME = "Recall_v3"
+# CORRECT_FSCORE_NAME = "F-Score_v3"
+#
+# NUM_SAMPLES = 100_000
+# RESET_PROB = 0.15
 
 
 def load_automaton_from_string(automaton_string: str) -> MooreMachine | None:
