@@ -251,6 +251,7 @@ def run_activePmSATLearn(
 
             if preprocessing_additional_traces:
                 traces += preprocessing_additional_traces
+                min_num_states = max(min_num_states, get_num_outputs(traces))
                 continue
         else:
             # make input complete anyways, such that we don't have to check whether transitions exist during postprocessing
@@ -419,6 +420,7 @@ def run_activePmSATLearn(
             logger.warning(f"No additional traces were produced during this round!")
 
         min_num_states = calculate_next_min_num_states(hypotheses, scores, get_num_outputs(traces))
+        assert min_num_states >= get_num_outputs(traces)
         previous_hypotheses = hypotheses
         previous_scores = scores
 
