@@ -81,3 +81,8 @@ venv2/
 /generated_data/
 /generated_data_*/
 /wip_learning_results_server
+/server_results/
+
+# charts (for now)
+evaluation/thesis_charts/*
+evaluation/thesis_charts*/
