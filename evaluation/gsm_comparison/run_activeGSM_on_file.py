@@ -16,7 +16,7 @@ from active_pmsatlearn.defs import *
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from evaluation.defs import oracles
 from evaluation.gsm_comparison.active_gsm import run_activeGSM
-from evaluation.learn_automata import setup_sul, calculate_statistics
+from evaluation.learn_automata import setup_sul, compute_accuracy
 from evaluation.utils import new_file
 
 
@@ -69,11 +69,9 @@ def compare_learned_model_with_original(original_model, learned_model):
     else:
         print(f"Bisimilar: {b is None}")
 
-    print("Calculate statistics...")
-    stats = calculate_statistics(original_model, learned_model)
-    max_len = len(max(stats.keys()))
-    for k, v in stats.items():
-        print(f"{k: <{max_len}}: {v}")
+    print("Calculate Accuracy...")
+    acc = compute_accuracy(original_model, learned_model)
+    print(f"Accuracy: {acc}")
 
 
 def save_models(original_model, learned_model):

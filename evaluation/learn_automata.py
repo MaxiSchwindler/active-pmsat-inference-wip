@@ -192,96 +192,46 @@ def write_results_to_csv(results: list[dict], results_file: str):
         writer.writerows(results)
 
 
-def calculate_accuracy(true_outputs, learned_outputs):
-    total_steps = len(true_outputs)
+def compute_accuracy(
+    automaton_a: MooreMachine | None,
+    automaton_b: MooreMachine | None,
+    num_samples: int = 100_000,
+    reset_prob: float = 0.09,
+) -> float:
+    if reset_prob <= 0:
+        raise ValueError("Reset Probability should be > 0")
 
-    # strong: Check if the entire trace matches
-    strong = 1 if true_outputs == learned_outputs else 0
+    if automaton_b is None or automaton_a is None:
+        return 0.
 
-    # medium: Number of steps that fit from the start until the first divergence
-    medium_fit_steps = 0
-    for t, l in zip(true_outputs, learned_outputs):
-        if t == l:
-            medium_fit_steps += 1
-        else:
-            break
-    medium = medium_fit_steps / total_steps
+    inputs_a = sorted(set(automaton_a.get_input_alphabet()))
+    inputs_b = sorted(set(automaton_b.get_input_alphabet()))
 
-    # weak: Number of matching steps divided by total steps
-    weak_fit_steps = sum(1 for t, l in zip(true_outputs, learned_outputs) if t == l)
-    weak = weak_fit_steps / total_steps
+    if inputs_a != inputs_b:
+        raise ValueError("Only automaton with the same input alphabet can be compared")
 
-    return strong, medium, weak
+    if bisimilar(automaton_a, automaton_b):
+        return 1.
 
+    random_words = []
+    for _ in range(num_samples):
+        random_words.append([])
+        while True:
+            inp = random.choice(inputs_a)
+            random_words[-1].append(inp)
+            if random.random() < reset_prob:
+                break
 
-# @timeit("Calculating statistics")
-def calculate_statistics(original_automaton: MooreMachine, learned_automaton: MooreMachine, extended_stats=False):
-    input_alphabet = original_automaton.get_input_alphabet()
-    extension_length = len(original_automaton.states) + 1
-    num_input_combinations = 0
+    assert len(random_words) == num_samples
 
-    # TODO: do i even need the extended stats?
-    num_completely_correct_traces = 0
-    num_outputs = 0
-    num_correct_outputs = 0
-    strong_accs = []
-    medium_accs = []
-    weak_accs = []
-    precision_per_trace = []
-    precision = 0
-    recall = 0
-    f_score = 0
+    correct = 0
+    for random_word in random_words:
+        out_a = automaton_a.execute_sequence(automaton_a.initial_state, random_word)
+        out_b = automaton_b.execute_sequence(automaton_b.initial_state, random_word)
+        if out_a == out_b:
+            correct += 1
 
-    if learned_automaton is not None:
-        precision = stochastic_conformance(original_automaton, learned_automaton)
-        recall = stochastic_conformance(learned_automaton, original_automaton)
-        f_score = statistics.harmonic_mean((precision, recall))
-
-        if extended_stats:
-            for input_combination in itertools.product(input_alphabet, repeat=extension_length):
-                num_input_combinations += 1
-                orig_outputs = original_automaton.execute_sequence(original_automaton.initial_state, input_combination)
-                learned_outputs = learned_automaton.execute_sequence(learned_automaton.initial_state, input_combination)
-
-                if orig_outputs == learned_outputs:
-                    num_completely_correct_traces += 1
-
-                num_outputs += len(orig_outputs)
-                num_correct_outputs_trace = sum((a == b) for a, b in zip(orig_outputs, learned_outputs))
-                num_correct_outputs += num_correct_outputs_trace
-
-                precision_per_trace.append(num_correct_outputs_trace / len(orig_outputs))
-
-                strong_acc, medium_acc, weak_acc = calculate_accuracy(orig_outputs, learned_outputs)
-                strong_accs.append(strong_acc)
-                medium_accs.append(medium_acc)
-                weak_accs.append(weak_acc)
-
-    if not extended_stats:
-        assert num_input_combinations == 0
-        num_input_combinations = 1  # hack to avoid div by zero below
-
-    return {
-        "Number of performed traces": num_input_combinations,
-        "Number of correct traces": num_completely_correct_traces,
-        "Length of each trace": extension_length,
-        "Number of outputs": num_outputs,
-        "Number of correct outputs": num_correct_outputs,
-        "Precision": precision,
-        "Recall": recall,
-        "F-Score": f_score,
-        "Precision (all steps)": (num_correct_outputs / num_outputs) if num_outputs > 0 else 0,
-        "Precision (all traces)": num_completely_correct_traces / num_input_combinations,
-        "Precision per trace (mean)": np.mean(precision_per_trace or [0]),
-        "Precision per trace (median)": np.median(precision_per_trace or [0]),
-        "Strong accuracy (mean)": np.mean(strong_accs or [0]),
-        "Strong accuracy (median)": np.median(strong_accs or [0]),
-        "Medium accuracy (mean)": np.mean(medium_accs or [0]),
-        "Medium accuracy (median)": np.median(medium_accs or [0]),
-        "Weak accuracy (mean)": np.mean(weak_accs or [0]),
-        "Weak accuracy (median)": np.median(weak_accs or [0]),
-        "calculated_extended_stats": extended_stats
-    }
+    return correct / num_samples
 
 
 def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: str, oracle_type: str, results_dir: str,
@@ -345,9 +295,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     info["oracle"] = oracle_type
     info["learned_correctly"] = learned_correctly
     info["bisimilar"] = bisimilar(sul.automaton, learned_model) if learned_model is not None else False
-    stats = calculate_statistics(sul.automaton, learned_model)
-    for key, val in stats.items():
-        info[key] = float(val)
+    info["Accuracy"] = compute_accuracy(sul.automaton, learned_model)
     info["learned_model"] = str(learned_model) if learned_model is not None else ""
 
     info["max_num_steps"] = max_num_steps

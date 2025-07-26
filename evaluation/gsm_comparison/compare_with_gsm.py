@@ -9,8 +9,8 @@ from aalpy import MooreMachine, load_automaton_from_file, bisimilar
 
 from active_pmsatlearn import get_logger
 from evaluation.charts import load_results
-from evaluation.gsm_baseline import run as run_gsm_baseline
-from evaluation.learn_automata import calculate_statistics
+from evaluation.gsm_comparison.gsm import run as run_gsm_baseline
+from evaluation.learn_automata import compute_accuracy
 from evaluation.utils import existing_dir
 
 logger = get_logger("COMPARE_WITH_GSM")
@@ -43,19 +43,23 @@ def compare_result_with_gsm(result: dict) -> dict:
     start_time = time.time()
     gsm_mm_nopurge: MooreMachine = run_gsm_baseline(**gsm_kwargs, purge_mismatches=False)
     end_time = time.time()
-    gsm_stats_nopurge = calculate_statistics(original_automaton, gsm_mm_nopurge)
-    gsm_stats_nopurge["learned_automaton_size"] = gsm_mm_nopurge.size
-    gsm_stats_nopurge["bisimilar"] = bisimilar(original_automaton, gsm_mm_nopurge)
-    gsm_stats_nopurge["total_time"] = end_time - start_time
+    gsm_stats_nopurge = {
+        "accuracy": compute_accuracy(original_automaton, gsm_mm_nopurge),
+        "learned_automaton_size": gsm_mm_nopurge.size,
+        "bisimilar": bisimilar(original_automaton, gsm_mm_nopurge),
+        "total_time": end_time - start_time,
+    }
 
     logger.info(f"Running GSM with purge_mismatches...")
     start_time = time.time()
     gsm_mm_purge: MooreMachine = run_gsm_baseline(**gsm_kwargs, purge_mismatches=True)
     end_time = time.time()
-    gsm_stats_purge = calculate_statistics(original_automaton, gsm_mm_purge)
-    gsm_stats_purge["learned_automaton_size"] = gsm_mm_purge.size
-    gsm_stats_purge["bisimilar"] = bisimilar(original_automaton, gsm_mm_purge)
-    gsm_stats_purge["total_time"] = end_time - start_time
+    gsm_stats_purge = {
+        "accuracy": compute_accuracy(original_automaton, gsm_mm_purge),
+        "learned_automaton_size": gsm_mm_purge.size,
+        "bisimilar": bisimilar(original_automaton, gsm_mm_purge),
+        "total_time": end_time - start_time,
+    }
 
     def _relevant(stats: dict) -> dict:
         # remove other stats/things we don't care about

@@ -11,7 +11,8 @@ import evaluation.learn_automata
 from evaluation import charts
 from evaluation.utils import new_file
 
-HYPS_FSCORES_KEY = "Hypotheses_Fscores"
+HYPS_ACCS_KEY = "Hypotheses_Accuracy"
+
 
 def load_automaton_from_string(automaton_string: str) -> MooreMachine:
     with tempfile.NamedTemporaryFile(mode='w+', suffix='.dot', delete=False) as tmp:
@@ -25,16 +26,7 @@ def load_automaton_from_string(automaton_string: str) -> MooreMachine:
         os.remove(tmp_path)
 
 
-def calculate_fscore(hypothesis_str: str, ground_truth: MooreMachine):
-    raise ValueError("USE CORRECT STATS!!!")
-    hypothesis = load_automaton_from_string(hypothesis_str)
-
-    stats = evaluation.learn_automata.calculate_statistics(original_automaton=ground_truth, learned_automaton=hypothesis)
-    return stats["F-Score"]
-
-
-def add_hyp_fscores_to_results(results_dir: str, new_results_dir: str, is_server_results):
-
+def add_hyp_accuracies_to_results(results_dir: str, new_results_dir: str, is_server_results):
     print("loading results...")
     results = charts.load_results(results_dir, remove_traces_used_to_learn=True, is_server_results=is_server_results)
     print(f"loaded {len(results)} results.")
@@ -46,22 +38,20 @@ def add_hyp_fscores_to_results(results_dir: str, new_results_dir: str, is_server
         for learning_round in range(1, result["learning_rounds"]+1):
             print(f"learning round {learning_round}", end="\r")
             learning_round_info = result["detailed_learning_info"][str(learning_round)]
-            if HYPS_FSCORES_KEY in learning_round_info:
+            if HYPS_ACCS_KEY in learning_round_info:
                 print("Score already calculated! Running on wrong directory?")
                 return
 
             if result["algorithm_name"].startswith("APMSL"):
-                fscores = {}
+                acc_scores = {}
                 for num_states, hyp in learning_round_info["hyp"].items():
                     if hyp is not None:
-                        fscore = calculate_fscore(hyp, ground_truth)
-                        fscores[num_states] = fscore
-                learning_round_info[HYPS_FSCORES_KEY] = fscores
+                        acc_scores[num_states] = evaluation.learn_automata.compute_accuracy(hyp, ground_truth)
+                learning_round_info[HYPS_ACCS_KEY] = acc_scores
 
             elif result["algorithm_name"].startswith("GSM"):
                 hyp = learning_round_info["hyp"]
-                fscore = calculate_fscore(hyp, ground_truth)
-                learning_round_info[HYPS_FSCORES_KEY] = fscore
+                learning_round_info[HYPS_ACCS_KEY] = evaluation.learn_automata.compute_accuracy(hyp, ground_truth)
 
             else:
                 raise ValueError(f"Unknown algorithm {result['algorithm_name']}")
@@ -73,7 +63,7 @@ def add_hyp_fscores_to_results(results_dir: str, new_results_dir: str, is_server
             json.dump(result, f, indent=4)
 
 def main():
-    parser = argparse.ArgumentParser(description='Calculate & add intermediary F-Scores to results. This may take long.')
+    parser = argparse.ArgumentParser(description='Calculate & add intermediary Accuracy-Scores to results. This may take long.')
     parser.add_argument("--existing_results_dir", type=str, required=True)
     parser.add_argument("--new_results_dir", type=str, required=True)
     parser.add_argument("--is_server_results", type=bool, default=False)
@@ -84,7 +74,7 @@ def main():
     new_results_dir = new_file(args.new_results_dir)
     os.makedirs(new_results_dir, exist_ok=False)
 
-    add_hyp_fscores_to_results(results_dir, new_results_dir, args.is_server_results)
+    add_hyp_accuracies_to_results(results_dir, new_results_dir, args.is_server_results)
 
 
 if __name__ == "__main__":

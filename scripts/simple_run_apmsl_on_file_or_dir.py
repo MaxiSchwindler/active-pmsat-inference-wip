@@ -11,7 +11,7 @@ from aalpy.utils import bisimilar
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
 
-from evaluation.learn_automata import calculate_statistics
+from evaluation.learn_automata import compute_accuracy
 from evaluation.utils import GlitchingSUL
 
 
@@ -105,11 +105,9 @@ def main():
             else:
                 print(f"Bisimilar: {b is None}")
 
-            print("Calculate statistics...")
-            stats = calculate_statistics(sul.automaton, learned_model)
-            max_len = len(max(stats.keys()))
-            for k, v in stats.items():
-                print(f"{k: <{max_len}}: {v}")
+            print("Calculate Accuracy...")
+            acc = compute_accuracy(sul.automaton, learned_model)
+            print(f"Accuracy: {acc}")
 
             print("Saving models...")
             learned_model.save("LearnedModel")
