@@ -26,7 +26,6 @@ from evaluation.generate_automata import *
 from evaluation.utils import *
 from evaluation.defs import *
 from evaluation.utils import print_results_info
-from f_similarity import stochastic_conformance
 
 logger = get_logger(__file__)
 

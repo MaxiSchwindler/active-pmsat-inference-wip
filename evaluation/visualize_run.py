@@ -9,7 +9,7 @@ from jinja2 import Environment, FileSystemLoader
 import argparse
 
 from evaluation.utils import new_file
-from f_similarity import f_score
+from evaluation.learn_automata import compute_accuracy
 
 
 class HTMLReport:
@@ -186,7 +186,7 @@ class HTMLReport:
                 hyp_info["Score"] = score
             hyp_info["Glitch Percentage"] = f'{data["pmsat_info"][num_states]["percent_glitches"]:.2f}%'
             if self.original_automaton is not None:
-                hyp_info["[META] F-Score with original"] = f"{f_score(self.original_automaton, aalpy.utils.FileHandler.load_automaton_from_string(hyp, 'moore')):.2f}"  # not (yet?) merged into aalpy
+                hyp_info["[META] Accuracy with original"] = f"{compute_accuracy(self.original_automaton, aalpy.utils.FileHandler.load_automaton_from_string(hyp, 'moore')):.2f}"  # not (yet?) merged into aalpy
 
             hyp_detail_info = dict()
             hyp_detail_info["glitch_trans"] = data["pmsat_info"][num_states]["glitch_trans"]
