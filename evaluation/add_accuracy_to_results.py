@@ -22,6 +22,27 @@ INPUT_COMPLETENESS_KEY_GT = "ground_truth_input_complete"
 NUM_SAMPLES = 100_000
 RESET_PROB = 0.09
 
+STATS_TO_REMOVE = (
+    "Number of performed traces",
+    "Number of correct traces",
+    "Length of each trace",
+    "Number of outputs",
+    "Number of correct outputs",
+    "Precision",
+    "Recall",
+    "F-Score",
+    "Precision (all steps)",
+    "Precision (all traces)",
+    "Precision per trace (mean)",
+    "Precision per trace (median)",
+    "Strong accuracy (mean)",
+    "Strong accuracy (median)",
+    "Medium accuracy (mean)",
+    "Medium accuracy (median)",
+    "Weak accuracy (mean)",
+    "Weak accuracy (median)",
+    "calculated_extended_stats",
+)
 
 def compute_accuracy(
     automaton_a: MooreMachine | None,
@@ -95,7 +116,7 @@ def write_result(result: dict, new_results_dir: str):
         json.dump(result, f, indent=4)
 
 
-def add_to_results(results_dir: str, new_results_dir: str, is_server_results: bool, to_add: tuple[str] = (ACCURACY_KEY, INPUT_COMPLETENESS_KEY)):
+def add_to_results(results_dir: str, new_results_dir: str, is_server_results: bool, to_add: tuple[str, ...] = (ACCURACY_KEY, INPUT_COMPLETENESS_KEY), to_remove: tuple[str, ...] = None):
     results = load_results(results_dir, is_server_results=is_server_results)
 
     for result in tqdm(results):
@@ -109,8 +130,13 @@ def add_to_results(results_dir: str, new_results_dir: str, is_server_results: bo
             result[ACCURACY_KEY] = compute_accuracy(automaton_a=ground_truth, automaton_b=learned_model, num_samples=NUM_SAMPLES, reset_prob=RESET_PROB)
 
         if INPUT_COMPLETENESS_KEY in to_add:
-            result[INPUT_COMPLETENESS_KEY] = learned_model.is_input_complete()
+            result[INPUT_COMPLETENESS_KEY] = learned_model.is_input_complete() if learned_model is not None else False
             result[INPUT_COMPLETENESS_KEY_GT] = ground_truth.is_input_complete()
+
+        if to_remove is not None:
+            for k in to_remove:
+                if k in result:
+                    del result[k]
 
         write_result(result, new_results_dir)
 
@@ -119,8 +145,9 @@ def main():
     parser = argparse.ArgumentParser(description='Calculate & add Accuracy to results. This may take long.')
     parser.add_argument("--existing_results_dir", type=str, required=True)
     parser.add_argument("--new_results_dir", type=str, required=True)
-    parser.add_argument("--is_server_results", type=bool, default=False)
-    parser.add_argument("--calculate_input_completeness", type=bool, default=True)
+    parser.add_argument("--is_server_results", action="store_true")
+    parser.add_argument("--calculate_input_completeness", action="store_true")
+    parser.add_argument("--remove_old_stats", action="store_true")
 
     args = parser.parse_args()
 
@@ -129,8 +156,9 @@ def main():
     os.makedirs(new_results_dir, exist_ok=False)
 
     to_add = (ACCURACY_KEY, INPUT_COMPLETENESS_KEY) if args.calculate_input_completeness else (ACCURACY_KEY, )
+    to_remove = STATS_TO_REMOVE if args.remove_old_stats else ()
 
-    add_to_results(results_dir, new_results_dir, is_server_results=args.is_server_results, to_add=to_add)
+    add_to_results(results_dir, new_results_dir, is_server_results=args.is_server_results, to_add=to_add, to_remove=to_remove)
 
 
 if __name__ == "__main__":
