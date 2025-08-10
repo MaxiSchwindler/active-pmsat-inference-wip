@@ -54,22 +54,26 @@ def replace_server_prefix(d: dict, results_dir: Path, server_prefix: str = '/hom
             replace_server_prefix(d[k], results_dir, server_prefix)
 
 
-def load_results(results_dir: str, remove_traces_used_to_learn=True, is_server_results=False, as_pandas=False) -> list[dict] | tuple[list[dict], pd.DataFrame]:
+def load_results(results_dir: str | Sequence[str], remove_traces_used_to_learn=True, is_server_results=False, as_pandas=False) -> list[dict] | tuple[list[dict], pd.DataFrame]:
+    if isinstance(results_dir, str):
+        results_dir = [results_dir]
+
     results = []
-    for filename in os.listdir(results_dir):
-        if filename.startswith('info') or not filename.endswith(".json"):
-            continue
-        with open(os.path.join(results_dir, filename), "r") as f:
-            if remove_traces_used_to_learn:
-                res = json.load(f, object_hook=remove_traces)
-            else:
-                res = json.load(f)
+    for _results_dir in results_dir:
+        for filename in os.listdir(_results_dir):
+            if filename.startswith('info') or not filename.endswith(".json"):
+                continue
+            with open(os.path.join(_results_dir, filename), "r") as f:
+                if remove_traces_used_to_learn:
+                    res = json.load(f, object_hook=remove_traces)
+                else:
+                    res = json.load(f)
 
-            if is_server_results:
-                replace_server_prefix(res, Path(results_dir))
+                if is_server_results:
+                    replace_server_prefix(res, Path(_results_dir))
 
-            results.append(res)
-        results[-1]["results_file"] = filename
+                results.append(res)
+            results[-1]["results_file"] = filename
 
     if as_pandas:
         return results, pd.DataFrame(results)
