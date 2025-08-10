@@ -4,8 +4,6 @@ Written by Benjamin von Berg
 
 from typing import Any
 
-from scipy.stats import binom
-
 from aalpy.learning_algs.general_passive.GeneralizedStateMerging import run_GSM
 from aalpy.learning_algs.general_passive.GsmNode import GsmNode as Node
 from aalpy.learning_algs.general_passive.GsmNode import TransitionInfo
@@ -31,6 +29,8 @@ class GlitchyDeterministicScore(ScoreCalculation):
         self.purge_mismatches = purge_mismatches
 
     def score_function(self, part: dict[Node, Node]):
+        from scipy.stats import binom  # this import can seemingly make problems during multi-processing (paging file too small)
+
         mismatches = 0
         evidence = 0
         for node in set(part.values()):
