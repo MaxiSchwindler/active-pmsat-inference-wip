@@ -503,26 +503,12 @@ def learn_sliding_window(sliding_window_size: int, min_num_states: int, traces: 
     return learned
 
 
-def calculate_next_min_num_states(hypotheses, scores, min_allowed_num_states):
+def calculate_next_min_num_states(hypotheses, scores):
     sliding_window_size = len(hypotheses)
-    current_min_num_states = min(hypotheses.keys())
     peak_index = find_index_of_absolute_peak(scores)
+    peak_num_states = get_num_states_from_scores_index(scores, peak_index)
 
-    if is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states):
-        return current_min_num_states
-    else:
-        mid_index = sliding_window_size // 2
-        diff_to_mid_index = peak_index - mid_index
-        min_num_states = current_min_num_states + diff_to_mid_index
-        if min_num_states >= min_allowed_num_states:
-            logger.debug(f"Moving start of sliding window to {min_num_states} states to position peak at the midpoint.")
-        else:
-            logger.debug(
-                f"Should move start of sliding window to {min_num_states} states to position peak at the midpoint, "
-                f"but there are too many outputs in the traces ({min_allowed_num_states}); "
-                f"setting min_num_states to {min_allowed_num_states}")
-            min_num_states = min_allowed_num_states
-        return min_num_states
+    return peak_num_states - (sliding_window_size // 2)
 
 
 def find_index_of_unimodal_peak(scores: dict[int, float]) -> int | None:
