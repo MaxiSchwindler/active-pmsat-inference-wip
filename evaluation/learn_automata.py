@@ -276,8 +276,8 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
         info = {"max_steps_reached": True}
     except Exception as e:
         learned_model = None
-        info = {'exception': repr(e)}
         import traceback
+        info = {'exception': traceback.format_exc()}
         logger.warning(f"Unknown exception during algorithm call:\n {traceback.format_exc()}")
 
     info["sul_transitions"] = getattr(sul, "taken_transitions", None)  # retrieve before check_equal, since this does steps in the sul
