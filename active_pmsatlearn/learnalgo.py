@@ -153,9 +153,14 @@ def run_activePmSATLearn(
     #              SETUP                #
     #####################################
 
+    params = get_algorithm_params_dict(locals())
+
     logger.setLevel({0: logging.CRITICAL, 1: logging.INFO, 2: logging.DEBUG, 2.5: DEBUG_EXT, 3: DEBUG_EXT}[print_level])
-    logger.debug("Running ActivePMSATLearn...")
-    detailed_learning_info = defaultdict(dict)
+    logger.debug(f"Running ActivePMSATLearn with {params}")
+
+    detailed_learning_info = dict()
+    detailed_learning_info["params"] = params
+    detailed_learning_info["learning_rounds"] = round_info = defaultdict(dict)
 
     start_time = time.time()
     must_end_by = start_time + timeout if timeout is not None else 100 * 365 * 24 * 60 * 60  # no timeout -> must end in 100 years :)
@@ -197,13 +202,14 @@ def run_activePmSATLearn(
     while True:
         logger.info(f"Starting learning round {(learning_rounds := learning_rounds + 1)}")
 
-        detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
-        detailed_learning_info[learning_rounds]["sliding_window_start"] = min_num_states
+        round_info[learning_rounds]["num_traces"] = len(traces)
+        round_info[learning_rounds]["sliding_window_start"] = min_num_states
 
         #####################################
         #              LEARNING             #
         #####################################
 
+        min_num_states = max(min_num_states, get_num_outputs(traces))
         hypotheses = learn_sliding_window(sliding_window_size=sliding_window_size,
                                           min_num_states=min_num_states,
                                           traces=traces,
@@ -212,7 +218,7 @@ def run_activePmSATLearn(
                                           )
         assert len(hypotheses) == sliding_window_size
         traces_used_to_learn = copy.deepcopy(traces)
-        detailed_learning_info[learning_rounds]["traces_used_to_learn"] = traces_used_to_learn
+        round_info[learning_rounds]["traces_used_to_learn"] = traces_used_to_learn
 
         # remove timed out hyps from hypotheses window
         timed_out_num_states = [n for n, r in hypotheses.items() if r == "timed_out"]
@@ -232,9 +238,9 @@ def run_activePmSATLearn(
             for n in unsat_num_states:
                 del hypotheses[n]
 
-        detailed_learning_info[learning_rounds]["pmsat_info"] = {ns: info for ns, (h, hs, info) in hypotheses.items()}
-        detailed_learning_info[learning_rounds]["hyp"] = {ns: str(h) for ns, (h, hs, info) in hypotheses.items()}
-        detailed_learning_info[learning_rounds]["hyp_stoc"] = {ns: str(hs) for ns, (h, hs, info) in hypotheses.items()}
+        round_info[learning_rounds]["pmsat_info"] = {ns: info for ns, (h, hs, info) in hypotheses.items()}
+        round_info[learning_rounds]["hyp"] = {ns: str(h) for ns, (h, hs, info) in hypotheses.items()}
+        round_info[learning_rounds]["hyp_stoc"] = {ns: str(hs) for ns, (h, hs, info) in hypotheses.items()}
 
         #####################################
         #           PREPROCESSING           #
@@ -246,12 +252,11 @@ def run_activePmSATLearn(
 
             if deduplicate_traces:
                 remove_duplicate_traces(traces, preprocessing_additional_traces)  # TODO: does de-duplication affect anything? check!
-            log_and_store_additional_traces(preprocessing_additional_traces, detailed_learning_info[learning_rounds],
+            log_and_store_additional_traces(preprocessing_additional_traces, round_info[learning_rounds],
                                             "input completeness", processing_step="pre")
 
             if preprocessing_additional_traces:
                 traces += preprocessing_additional_traces
-                min_num_states = max(min_num_states, get_num_outputs(traces))
                 continue
         else:
             # make input complete anyways, such that we don't have to check whether transitions exist during postprocessing
@@ -268,7 +273,7 @@ def run_activePmSATLearn(
         scores = {num_states: heuristic_function(hyp, info, traces) for num_states, (hyp, _, info) in hypotheses.items()}
         assert sorted(scores.keys()) == list(scores.keys())
         logger.debug(f"Calculated the following scores via heuristic function '{heuristic_function.__name__}': {scores}")
-        detailed_learning_info[learning_rounds]["heuristic_scores"] = scores
+        round_info[learning_rounds]["heuristic_scores"] = scores
 
         #####################################
         #            EVALUATING             #
@@ -279,7 +284,7 @@ def run_activePmSATLearn(
                                                            current_min_num_states=min_num_states,
                                                            traces_used_to_learn=traces,
                                                            termination_mode=termination_mode,
-                                                           current_learning_info=detailed_learning_info[learning_rounds],
+                                                           current_learning_info=round_info[learning_rounds],
                                                            timed_out=timed_out)
 
         if terminate:
@@ -306,7 +311,7 @@ def run_activePmSATLearn(
                 peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
                 remove_congruent_traces(peak_hyp, postprocessing_additional_traces_glitch)
 
-            log_and_store_additional_traces(postprocessing_additional_traces_glitch, detailed_learning_info[learning_rounds], "glitch")
+            log_and_store_additional_traces(postprocessing_additional_traces_glitch, round_info[learning_rounds], "glitch")
 
             traces = traces + postprocessing_additional_traces_glitch
 
@@ -320,7 +325,7 @@ def run_activePmSATLearn(
                 peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
                 remove_congruent_traces(peak_hyp, postprocessing_additional_traces_window_cex)
 
-            log_and_store_additional_traces(postprocessing_additional_traces_window_cex, detailed_learning_info[learning_rounds], "window cex")
+            log_and_store_additional_traces(postprocessing_additional_traces_window_cex, round_info[learning_rounds], "window cex")
 
             traces = traces + postprocessing_additional_traces_window_cex
 
@@ -343,7 +348,7 @@ def run_activePmSATLearn(
                 peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
                 remove_congruent_traces(peak_hyp, postprocessing_additional_traces_replay)
 
-            log_and_store_additional_traces(postprocessing_additional_traces_replay, detailed_learning_info[learning_rounds], "replay")
+            log_and_store_additional_traces(postprocessing_additional_traces_replay, round_info[learning_rounds], "replay")
 
             traces = traces + postprocessing_additional_traces_replay
 
@@ -357,7 +362,7 @@ def run_activePmSATLearn(
                 peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
                 remove_congruent_traces(peak_hyp, postprocessing_additional_traces_random_walks)
 
-            log_and_store_additional_traces(postprocessing_additional_traces_random_walks, detailed_learning_info[learning_rounds], "random walks")
+            log_and_store_additional_traces(postprocessing_additional_traces_random_walks, round_info[learning_rounds], "random walks")
 
             traces = traces + postprocessing_additional_traces_random_walks
 
@@ -372,7 +377,7 @@ def run_activePmSATLearn(
                 peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
                 remove_congruent_traces(peak_hyp, postprocessing_additional_traces_state_coverage)
 
-            log_and_store_additional_traces(postprocessing_additional_traces_state_coverage, detailed_learning_info[learning_rounds], "transition coverage")
+            log_and_store_additional_traces(postprocessing_additional_traces_state_coverage, round_info[learning_rounds], "transition coverage")
 
             traces = traces + postprocessing_additional_traces_state_coverage
 
@@ -394,7 +399,7 @@ def run_activePmSATLearn(
                     peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
                     remove_congruent_traces(peak_hyp, postprocessing_additional_traces_cex)
 
-                log_and_store_additional_traces(postprocessing_additional_traces_cex, detailed_learning_info[learning_rounds], "cex")
+                log_and_store_additional_traces(postprocessing_additional_traces_cex, round_info[learning_rounds], "cex")
 
                 traces = traces + postprocessing_additional_traces_cex
 
@@ -413,14 +418,13 @@ def run_activePmSATLearn(
                     traces_to_remove.update(get_incongruent_traces(glitchless_trace=glitchless_trace, traces=traces))
 
                 logger.debug(f"Removing {len(traces_to_remove)} traces because they were incongruent with counterexample")
-                detailed_learning_info[learning_rounds]["removed_traces"] = len(traces_to_remove)
+                round_info[learning_rounds]["removed_traces"] = len(traces_to_remove)
                 traces = [t for t_i, t in enumerate(traces) if t_i not in traces_to_remove]
 
-        if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
+        if len(traces) == round_info[learning_rounds]["num_traces"]:
             logger.warning(f"No additional traces were produced during this round!")
 
-        min_num_states = calculate_next_min_num_states(hypotheses, scores, get_num_outputs(traces))
-        assert min_num_states >= get_num_outputs(traces)
+        min_num_states = calculate_next_min_num_states(hypotheses, scores)
         previous_hypotheses = hypotheses
         previous_scores = scores
 
@@ -728,17 +732,24 @@ def print_learning_info(info: dict[str, Any]):
         print(' # MQ Saved by Caching : {}'.format(info['cache_saved']))
     print(' # Steps               : {}'.format(info['steps_learning']))
     print('Pre/Postprocessing:')
-    for method_name, total_num in get_total_num_additional_traces(info['detailed_learning_info']).items():
+    for method_name, total_num in get_total_num_additional_traces(info['detailed_learning_info']['learning_rounds']).items():
         print(f"  {method_name}: {total_num} additional traces")
     print('-----------------------------------')
 
 
-def get_total_num_additional_traces(detailed_learning_info: dict[int, dict]):
+def get_total_num_additional_traces(rounds_info: dict[int, dict]):
     sums = defaultdict(int)
-    for info in detailed_learning_info.values():
+    for info in rounds_info.values():
         for key, value in info.items():
             if not key.startswith("additional_traces_"):
                 continue
             key = key[len("additional_traces_"):]
             sums[key] += len(value)
     return sums
+
+
+def get_algorithm_params_dict(_locals):
+    import inspect
+    alg_params = inspect.signature(run_activePmSATLearn).parameters
+
+    return {k: str(_locals[k]) for k in alg_params}

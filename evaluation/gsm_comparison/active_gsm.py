@@ -66,9 +66,14 @@ def run_activeGSM(
     if use_dis_as_cex:
         assert eq_oracle is None
 
+    params = get_algorithm_params_dict(locals())
+
     logger.setLevel({0: logging.CRITICAL, 1: logging.INFO, 2: logging.DEBUG, 2.5: DEBUG_EXT, 3: DEBUG_EXT}[print_level])
-    logger.debug("Running activeGSM with GlitchyDeterministicScore algorithm...")
-    detailed_learning_info = defaultdict(dict)
+    logger.debug(f"Running activeGSM with GlitchyDeterministicScore algorithm with {params}")
+
+    detailed_learning_info = dict()
+    detailed_learning_info["params"] = params
+    detailed_learning_info["learning_rounds"] = round_info = defaultdict(dict)
 
     start_time = time.time()
     must_end_by = start_time + timeout if timeout is not None else 100 * 365 * 24 * 60 * 60  # no timeout -> must end in 100 years :)
@@ -105,7 +110,7 @@ def run_activeGSM(
     while not (timed_out := (time.time() >= must_end_by)):
         logger.info(f"Starting learning round {(learning_rounds := learning_rounds + 1)}")
 
-        detailed_learning_info[learning_rounds]["num_traces"] = len(traces)
+        round_info[learning_rounds]["num_traces"] = len(traces)
 
         #####################################
         #              LEARNING             #
@@ -113,9 +118,9 @@ def run_activeGSM(
 
         hyp: SupportedAutomaton = gsm.run(traces, **common_gsm_kwargs)
         if return_traces:
-            detailed_learning_info[learning_rounds]["traces_used_to_learn"] = copy.deepcopy(traces)
+            round_info[learning_rounds]["traces_used_to_learn"] = copy.deepcopy(traces)
 
-        detailed_learning_info[learning_rounds]["hyp"] = str(hyp)
+        round_info[learning_rounds]["hyp"] = str(hyp)
 
         #####################################
         #           PREPROCESSING           #
@@ -126,7 +131,7 @@ def run_activeGSM(
                                                                                   suffix_mode=input_completeness_preprocessing,
                                                                                   **common_processing_kwargs)
 
-            log_and_store_additional_traces(preprocessing_additional_traces, detailed_learning_info[learning_rounds],
+            log_and_store_additional_traces(preprocessing_additional_traces, round_info[learning_rounds],
                                             "input completeness", processing_step="pre", store=return_traces)
 
             if preprocessing_additional_traces:
@@ -150,7 +155,7 @@ def run_activeGSM(
             logger.debug("Checking for counterexample in eq oracle...")
             cex = eq_oracle.find_cex(hypothesis=hyp, return_outputs=False)
             terminate = cex is None
-            detailed_learning_info[learning_rounds]["cex"] = cex
+            round_info[learning_rounds]["cex"] = cex
             logger.debug(f"Eq oracle found{'' if cex else ' no'} counterexample - {'Terminate' if terminate else 'Continue'}!")
             if cex:
                 logger.debug_ext(f"Counterexample: {cex}")
@@ -159,7 +164,7 @@ def run_activeGSM(
             logger.debug("Using distinguishing sequence with previous hyp as cex. Finding distinguishing sequence...")
             cex = hyp.find_distinguishing_seq(hyp.initial_state, prev_hyp.initial_state, alphabet)
             terminate = cex is None
-            detailed_learning_info[learning_rounds]["cex"] = cex
+            round_info[learning_rounds]["cex"] = cex
             logger.debug(f"{'D' if cex else 'No d'}istinguishing sequence found - {'Terminate' if terminate else 'Continue'}!")
             if cex:
                 logger.debug_ext(f"Counterexample: {cex}")
@@ -192,7 +197,7 @@ def run_activeGSM(
                                                                             **common_processing_kwargs)
 
             log_and_store_additional_traces(postprocessing_additional_traces_random_walks,
-                                            detailed_learning_info[learning_rounds], "random walks", store=return_traces)
+                                            round_info[learning_rounds], "random walks", store=return_traces)
 
             traces = traces + postprocessing_additional_traces_random_walks
 
@@ -200,11 +205,11 @@ def run_activeGSM(
             postprocessing_additional_traces_cex = do_cex_processing(cex, **common_processing_kwargs)
 
             log_and_store_additional_traces(postprocessing_additional_traces_cex,
-                                            detailed_learning_info[learning_rounds], "cex", store=return_traces)
+                                            round_info[learning_rounds], "cex", store=return_traces)
 
             traces = traces + postprocessing_additional_traces_cex
 
-        if len(traces) == detailed_learning_info[learning_rounds]["num_traces"]:
+        if len(traces) == round_info[learning_rounds]["num_traces"]:
             logger.warning(f"No additional traces were produced during this round!")
 
         previous_hypotheses.append(hyp)
@@ -266,6 +271,13 @@ def print_learning_info(info: dict[str, Any]):
         print(' # MQ Saved by Caching : {}'.format(info['cache_saved']))
     print(' # Steps               : {}'.format(info['steps_learning']))
     print('Pre/Postprocessing:')
-    for method_name, total_num in get_total_num_additional_traces(info['detailed_learning_info']).items():
+    for method_name, total_num in get_total_num_additional_traces(info['detailed_learning_info']['learning_rounds']).items():
         print(f"  {method_name}: {total_num} additional traces")
     print('-----------------------------------')
+
+
+def get_algorithm_params_dict(_locals):
+    import inspect
+    alg_params = inspect.signature(run_activeGSM).parameters
+
+    return {k: str(_locals[k]) for k in alg_params}
