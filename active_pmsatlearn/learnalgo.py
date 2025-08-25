@@ -586,7 +586,8 @@ def should_terminate(current_hypotheses: HypothesesWindow, current_scores: dict[
         else:
             logger.debug(f"Oracle found counterexample. Continuing.")
             logger.debug_ext(f"Counterexample: {cex}")
-            additional_data = dict(cex=cex, cex_outputs=cex_outputs)
+            additional_data['cex'] = cex
+            additional_data['cex_outputs'] = cex_outputs
 
     if previous_hypotheses is None:
         logger.debug("No previous hypotheses; learn again with same window.")
@@ -674,7 +675,7 @@ def should_terminate(current_hypotheses: HypothesesWindow, current_scores: dict[
 
         case EqOracleTermination(eq_oracle):
             # if the eq oracle had no counterexample, we would have already returned
-            assert 'cex' in additional_data.get('additional_data', {})
+            assert 'cex' in additional_data
             return False, None, additional_data
 
         case _:
