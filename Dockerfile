@@ -17,7 +17,7 @@ RUN git clone --depth 1 --filter=blob:none --no-checkout https://gitlab.com/Maxi
     && git checkout main
 
 # clone AALpy
-RUN git clone --depth 1 --filter=blob:none --no-checkout https://github.com/MaxiSchwindler/AALpy.git \
+RUN git clone --depth 1 --filter=blob:none --no-checkout https://github.com/DES-Lab/AALpy.git \
     && cd AALpy \
     && git sparse-checkout init --cone \
     && git sparse-checkout set aalpy \
@@ -25,6 +25,9 @@ RUN git clone --depth 1 --filter=blob:none --no-checkout https://github.com/Maxi
 
 # set PYTHONPATH
 ENV PYTHONPATH="/git/active-pmsat-inference-wip:/git/pmsat-inference:/git/AALpy:${PYTHONPATH}"
+# Alternatively, if you're just following these steps manually, you can create a venv (inside active-pmsat-inference-wip=:
+#  python -m venv venv
+# and add the paths to a .pth file in venv/lib/python3.11/site-packages/ (or the corresponding path on your system)
 
 # install Python dependencies
 WORKDIR /git/active-pmsat-inference-wip

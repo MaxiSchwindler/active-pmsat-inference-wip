@@ -296,6 +296,8 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     info["bisimilar"] = bisimilar(sul.automaton, learned_model) if learned_model is not None else False
     info["Accuracy"] = compute_accuracy(sul.automaton, learned_model)
     info["learned_model"] = str(learned_model) if learned_model is not None else ""
+    info["learned_model_input_complete"] = learned_model.is_input_complete() if learned_model is not None else False
+    info["ground_truth_input_complete"] = sul.automaton.is_input_complete()
 
     info["max_num_steps"] = max_num_steps
     info["glitch_percent"] = glitch_percent

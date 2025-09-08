@@ -103,7 +103,7 @@ def load_automaton_from_string(automaton_string: str) -> MooreMachine | None:
 
 def load_results(results_dir: str, is_server_results: bool) -> list[dict]:
     print("loading results...")
-    results = charts.load_results(results_dir, remove_traces_used_to_learn=True, is_server_results=is_server_results)
+    results = charts.load_results(results_dir, remove_traces_used_to_learn=False, is_server_results=is_server_results)
     print(f"loaded {len(results)} results.")
     return results
 

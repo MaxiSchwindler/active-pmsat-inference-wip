@@ -53,6 +53,26 @@ def replace_server_prefix(d: dict, results_dir: Path, server_prefix: str = '/hom
         elif isinstance(d[k], dict):
             replace_server_prefix(d[k], results_dir, server_prefix)
 
+def format_seconds(seconds: int) -> str:
+    # break into days, hours, minutes, seconds
+    minutes, sec = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+
+    if hours > 48:
+        days, hours = divmod(hours, 24)
+    else:
+        # show days only after more than 48 hours
+        days, hours = 0, hours
+
+    if days > 0:
+        return f"{days} day{'s' if days != 1 else ''}"
+    elif hours > 0:
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    elif minutes > 0:
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+    else:
+        return f"{sec} second{'s' if sec != 1 else ''}"
+
 
 def load_results(results_dir: str | Sequence[str], remove_traces_used_to_learn=True, is_server_results=False, as_pandas=False) -> list[dict] | tuple[list[dict], pd.DataFrame]:
     if isinstance(results_dir, str):
@@ -63,6 +83,7 @@ def load_results(results_dir: str | Sequence[str], remove_traces_used_to_learn=T
         for filename in os.listdir(_results_dir):
             if filename.startswith('info') or not filename.endswith(".json"):
                 continue
+
             with open(os.path.join(_results_dir, filename), "r") as f:
                 if remove_traces_used_to_learn:
                     res = json.load(f, object_hook=remove_traces)
@@ -71,6 +92,20 @@ def load_results(results_dir: str | Sequence[str], remove_traces_used_to_learn=T
 
                 if is_server_results:
                     replace_server_prefix(res, Path(_results_dir))
+
+                # add timeout as nice string
+                if 'params' in res['detailed_learning_info']:
+                    timeout = res['detailed_learning_info']['params']['timeout']
+                else:
+                    if 'timeout' in res['algorithm_kwargs']:
+                        timeout = res['algorithm_kwargs']['timeout']
+                    else:
+                        print("Warning: Guessing timeout parameter!")
+                        if is_server_results:
+                            timeout = 2 * 60 * 60
+                        else:
+                            timeout = 1 * 60 * 60
+                res['timeout_str'] = format_seconds(int(timeout))
 
                 results.append(res)
             results[-1]["results_file"] = filename
