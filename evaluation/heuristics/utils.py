@@ -145,7 +145,7 @@ def calculate_heurisic_scores(real_model: MooreMachine, learned_models: list[tup
 
 def plot_heuristic_scores(real_model: MooreMachine, learned_models: list[tuple[MooreMachine, dict, dict]], infos: dict,
                           heuristic: HeuristicFunction, new_plot: bool = True, show_plot: bool = True,
-                          as_line: bool = False, mark_best_model: bool = False):
+                          as_line: bool = False, mark_best_model: bool = False, plot_zero_line: bool = True, alpha: float = 1.0, ax=None):
     """
     Plot the heuristic scores of multiple learned models of one original automaton over distance to the original automaton.
     This calls calculate_heuristic_scores() to calculate the values.
@@ -162,27 +162,30 @@ def plot_heuristic_scores(real_model: MooreMachine, learned_models: list[tuple[M
     scores = calculate_heurisic_scores(real_model, learned_models, infos, heuristic)
     if new_plot:
         plt.figure()
+    if ax is None:
+        ax = plt.gca()
 
-    plt.axvline(0, color='red', linewidth=0.5, linestyle='--')  # TODO this line is added many times
+    if plot_zero_line:
+        ax.axvline(0, color='red', linewidth=0.5, linestyle='--')  # TODO this line is added many times
 
     if as_line:
-        plt.plot(scores.keys(), scores.values())
+        ax.plot(scores.keys(), scores.values(), alpha=alpha)
     else:
-        plt.scatter(scores.keys(), scores.values())
+        ax.scatter(scores.keys(), scores.values(), alpha=alpha)
 
     if mark_best_model:
         best_key = max(scores, key=scores.get)
         best_value = scores[best_key]
-        plt.scatter([best_key], [best_value], marker='*', facecolor='none', edgecolors="red", s=75, zorder=5)
+        ax.scatter([best_key], [best_value], marker='*', facecolor='none', edgecolors="red", s=50, zorder=5)
 
     curr_ticks, curr_tick_labels = plt.xticks()
     if not set(scores.keys()).issubset(set(curr_ticks)) or any(int(ct) != ct for ct in curr_ticks):
         # add new ticks if (a) current keys are not in current ticks or (b) current ticks contains floats
-        plt.xticks(list(scores.keys()))
+        ax.set_xticks(list(scores.keys()))
 
-    plt.xlabel("Distance to ground truth")
-    plt.ylabel(f"{heuristic.__name__} score")
-    plt.title(f"Scores of heuristic '{heuristic.__name__}'")
+    ax.set_xlabel("Distance to ground truth")
+    ax.set_ylabel(f"{heuristic.__name__} score")
+    ax.set_title(f"Scores of heuristic '{heuristic.__name__}'")
 
     if show_plot:
         plt.show()
@@ -214,16 +217,26 @@ def plot_heuristic_scores_for_model(model: str, heuristic: HeuristicFunction, mo
     plot_heuristic_scores(real_model, learned_models, infos, heuristic, **kwargs)
 
 
-def plot_heuristic_scores_for_all_models_in_dir(heuristic: HeuristicFunction, models_dir: str = DEFAULT_DATA_DIR,
+def plot_heuristic_scores_for_all_models_in_dir(heuristic: HeuristicFunction, models_dir: str = DEFAULT_DATA_DIR, show_plot: bool = True,
                                                 **kwargs):
     """ Plot the heuristic scores of learnt models of all models in the given models directory"""
     plt.figure()
+    i = 0
     for model_name in os.listdir(models_dir):
         if not (Path(models_dir) / model_name).is_dir():
             continue
+
+        if i == 0:
+            i += 1
+            plot_zero_line = True
+        else:
+            plot_zero_line = False
+        kwargs["plot_zero_line"] = plot_zero_line
+
         plot_heuristic_scores_for_model(model_name, heuristic, models_dir=models_dir, new_plot=False, show_plot=False,
                                         **kwargs)
-    plt.show()
+    if show_plot:
+        plt.show()
 
 
 def _calc_dist_to_num_best_models(heuristic: HeuristicFunction, models_dir=DEFAULT_DATA_DIR):
@@ -264,7 +277,8 @@ def plot_number_of_best_models_identified(heuristic: HeuristicFunction, models_d
     plt.title(f"Number of best models identified at distance")
     plt.xlabel("Distance to ground truth")
     plt.ylabel("Number of best models identified")
-    plt.legend(loc=(1.04, 1))
+    # plt.legend(loc=(1.04, 1))
+    plt.legend(loc='best')
 
     if show_plot:
         plt.show()

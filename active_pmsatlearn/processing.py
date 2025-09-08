@@ -305,13 +305,30 @@ def do_random_walks(num_steps: int, sul: SupportedSUL, alphabet: list[Input], al
         a list of new traces
     """
     logger.debug(f"Performing random walks with a total of {num_steps} steps")
-    new_traces = []
+    # new_traces = []
+    # remaining_steps = num_steps
+    # while remaining_steps > 0:
+    #     walk_len = random.randint(1, remaining_steps)
+    #     random_walk = tuple(random.choice(alphabet) for _ in range(walk_len))
+    #
+    #     new_traces.append(trace_query(sul, random_walk))
+    #     remaining_steps -= walk_len
+
+    # reset_prob = 0.15  # specific for TLS for now, since sink state (needs bigger reset prob)
+    reset_prob = 0.09
+    queries = []
     remaining_steps = num_steps
     while remaining_steps > 0:
-        walk_len = random.randint(1, remaining_steps)
-        random_walk = tuple(random.choice(alphabet) for _ in range(walk_len))
+        query = []
+        while remaining_steps > 0:
+            inp = random.choice(alphabet)
+            remaining_steps -= 1
+            query.append(inp)
+            if random.random() < reset_prob:
+                break
+        queries.append(query)
 
-        new_traces.append(trace_query(sul, random_walk))
-        remaining_steps -= walk_len
-
+    new_traces = []
+    for query in queries:
+        new_traces.append(trace_query(sul, query))
     return new_traces
