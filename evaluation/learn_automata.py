@@ -8,8 +8,10 @@ import itertools
 import pprint
 import statistics
 import uuid
+import sys
 
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 from aalpy import bisimilar
@@ -130,7 +132,7 @@ def stop_remaining_jobs(pool: ProcessPool):
 def result_json_files_to_csv(results_dir):
     results = []
     for file in os.listdir(results_dir):
-        if file == "info.json":
+        if file in ("info.json", "call.txt"):
             continue
         file_path = os.path.join(results_dir, file)
         with open(file_path, 'r') as f:
@@ -149,6 +151,10 @@ def result_json_files_to_csv(results_dir):
 def write_results_info(results_dir, automata_type, automata_files, algorithm_names, learn_num_times, max_num_steps,
                        oracle_types, results_file):
     os.makedirs(results_dir, exist_ok=True)
+
+    with open(os.path.join(results_dir, "call.txt"), 'w') as f:
+        f.write(" ".join(sys.argv))
+
     with open(os.path.join(results_dir, "info.json"), "w") as f:
         json.dump(dict(automata_type=automata_type,
                        automata_files=automata_files,
