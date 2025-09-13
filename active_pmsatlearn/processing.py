@@ -305,17 +305,34 @@ def do_random_walks(num_steps: int, sul: SupportedSUL, alphabet: list[Input], al
         a list of new traces
     """
     logger.debug(f"Performing random walks with a total of {num_steps} steps")
-    # new_traces = []
-    # remaining_steps = num_steps
-    # while remaining_steps > 0:
-    #     walk_len = random.randint(1, remaining_steps)
-    #     random_walk = tuple(random.choice(alphabet) for _ in range(walk_len))
-    #
-    #     new_traces.append(trace_query(sul, random_walk))
-    #     remaining_steps -= walk_len
+    new_traces = []
+    remaining_steps = num_steps
+    while remaining_steps > 0:
+        walk_len = random.randint(1, remaining_steps)
+        random_walk = tuple(random.choice(alphabet) for _ in range(walk_len))
 
-    # reset_prob = 0.15  # specific for TLS for now, since sink state (needs bigger reset prob)
-    reset_prob = 0.09
+        new_traces.append(trace_query(sul, random_walk))
+        remaining_steps -= walk_len
+
+    return new_traces
+
+
+def do_random_walks_with_reset_prob(num_steps: int, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
+                                    reset_prob: float = 0.09) -> list[Trace]:
+    """
+    Do random walks on the SUL
+
+    Args:
+        num_steps: exact number of steps all walks should add up to
+        sul: system under learning
+        alphabet: input alphabet
+        all_input_combinations: all input combinations, alphabet^extension_length
+
+    Returns:
+        a list of new traces
+    """
+    logger.debug(f"Performing random walks with a total of {num_steps} steps")
+
     queries = []
     remaining_steps = num_steps
     while remaining_steps > 0:

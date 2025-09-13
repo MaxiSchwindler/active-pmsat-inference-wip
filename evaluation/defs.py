@@ -7,6 +7,7 @@ from inspect import signature, Signature, Parameter
 from typing import Callable, Any
 
 import aalpy.learning_algs
+from aalpy import run_KV
 from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.oracles import RandomWMethodEqOracle
 
@@ -30,20 +31,29 @@ class RobustPerfectMooreOracle(RobustPerfectMooreEqOracle):
 
 
 class RobustRandomWalkOracle(RobustRandomWalkEqOracle):
-    def __init__(self, sul: MooreSUL | MealySUL):
+    def __init__(self, sul: MooreSUL | MealySUL, max_num_tries: int | None = 5):
         super().__init__(
             alphabet=sul.automaton.get_input_alphabet(),
             sul=sul,
             num_steps=sul.automaton.size * 5_000,
             reset_after_cex=True,
-            reset_prob=0.09
+            reset_prob=0.09,
+            max_num_tries=max_num_tries
+        )
+
+class RobustRandomWalkOracleWithoutAbort(RobustRandomWalkOracle):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            sul=sul,
+            max_num_tries=None,
         )
 
 
 oracles = {
     "None": lambda sul: None,
     "Perfect": RobustPerfectMooreOracle,
-    "Random": RobustRandomWalkOracle,
+    "RandomWithAbort": RobustRandomWalkOracle,
+    "RandomWithoutAbort": RobustRandomWalkOracleWithoutAbort,
 }
 
 
@@ -271,6 +281,7 @@ class APMSL(MooreLearningAlgorithm):
         'rp': 'replay_glitches',
         'wcp': 'window_cex_processing',
         'rs': 'random_steps_per_round',
+        'rsrp': 'random_steps_per_round_with_reset_prob',
         'tc': 'transition_coverage_steps',
 
         'cp': 'cex_processing',
@@ -362,3 +373,28 @@ class GSM(MooreLearningAlgorithm):
         return {
             'failure_rate': glitch_percent / 100,
         }
+
+class KVWithGlitchesInOracle(MooreLearningAlgorithm):
+    @staticmethod
+    def function(**kwargs):
+        oracle = kwargs['eq_oracle']
+        sul = kwargs['sul']
+
+        def get_glitch_percentage(sul):
+            return getattr(sul, 'glitch_percentage', None)
+
+        def set_glitch_percentage(sul, glitch_percent):
+            if hasattr(sul, 'glitch_percentage'):
+                sul.glitch_percentage = glitch_percent
+
+        stored_glitch_percentage = get_glitch_percentage(sul)
+
+        def get_cex(eq_oracle, hyp):
+            assert oracle is eq_oracle
+            set_glitch_percentage(sul, stored_glitch_percentage)
+            cex = eq_oracle.find_cex(hyp, return_outputs=False)
+            sul.glitch_percentage = 0
+            return cex
+
+        hyp, info = run_KV(**kwargs, cache_and_non_det_check=False, get_cex=get_cex)  #needs a patch in aalpy to use get_cex as wrapper for oracle.find_cex
+        return hyp, info

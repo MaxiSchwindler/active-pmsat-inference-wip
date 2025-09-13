@@ -74,7 +74,74 @@ def format_seconds(seconds: int) -> str:
         return f"{sec} second{'s' if sec != 1 else ''}"
 
 
-def load_results(results_dir: str | Sequence[str], remove_traces_used_to_learn=True, is_server_results=False, as_pandas=False) -> list[dict] | tuple[list[dict], pd.DataFrame]:
+def calculate_num_cex_queries(result: dict):
+    if result["oracle"] in ("None", None, False):
+        return 0
+
+    timed_out = result["timed_out"]
+    if result["algorithm_name"].startswith("GSM"):
+        return result["learning_rounds"]
+
+    if not "detailed_learning_info" in result:
+        assert "APMSL" not in result["algorithm_name"]
+        return result["learning_rounds"]
+
+    if "learning_rounds" in result["detailed_learning_info"]:
+        learning_rounds = result["detailed_learning_info"]["learning_rounds"]
+    else:
+        learning_rounds = result["detailed_learning_info"]
+
+    cex_queries = 0
+    last_round = result["learning_rounds"]
+    for round_str, round_info in learning_rounds.items():
+        round_nr = int(round_str)
+
+        if timed_out and round_nr == last_round:
+            # timed out during learning - we didn't do a cex query
+            break
+
+        if round_info["num_additional_traces_preprocessing_input_completeness"] > 0:
+            # we collected ic traces and didn't do a cex query
+            continue
+
+        cex_queries += 1
+
+    return cex_queries
+
+
+def calculate_num_cex_queries_returned_cex(result: dict):
+    if result["oracle"] in ("None", None, False):
+        return 0
+
+    if result["algorithm_name"].startswith("GSM"):
+        return result["learning_rounds"] - 1
+
+    if "learning_rounds" in result["detailed_learning_info"]:
+        learning_rounds = result["detailed_learning_info"]["learning_rounds"]
+    else:
+        learning_rounds = result["detailed_learning_info"]
+
+    cex_queries = 0
+    timed_out = result["timed_out"]
+    last_round = result["learning_rounds"]
+    for round_str, round_info in learning_rounds.items():
+        round_nr = int(round_str)
+
+        if timed_out and round_nr == last_round:
+            # timed out during learning - we didn't do a cex query
+            break
+
+        if round_info["num_additional_traces_preprocessing_input_completeness"] > 0:
+            # we collected ic traces and didn't do a cex query
+            continue
+
+        cex_queries += 1
+
+    return cex_queries
+
+
+def load_results(results_dir: str | Sequence[str], remove_traces_used_to_learn=True, is_server_results=False,
+                 as_pandas=False, add_num_cex_queries=True) -> list[dict] | tuple[list[dict], pd.DataFrame]:
     if isinstance(results_dir, str):
         results_dir = [results_dir]
 
@@ -93,11 +160,14 @@ def load_results(results_dir: str | Sequence[str], remove_traces_used_to_learn=T
                 if is_server_results:
                     replace_server_prefix(res, Path(_results_dir))
 
+                if add_num_cex_queries:
+                    res["num_cex_queries"] = calculate_num_cex_queries(res)
+
                 # add timeout as nice string
-                if 'params' in res['detailed_learning_info']:
+                if 'params' in res.get('detailed_learning_info', {}):
                     timeout = res['detailed_learning_info']['params']['timeout']
                 else:
-                    if 'timeout' in res['algorithm_kwargs']:
+                    if 'timeout' in res.get('algorithm_kwargs', {}):
                         timeout = res['algorithm_kwargs']['timeout']
                     else:
                         print("Warning: Guessing timeout parameter!")

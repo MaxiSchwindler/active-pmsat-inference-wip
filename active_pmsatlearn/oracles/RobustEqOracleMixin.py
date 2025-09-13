@@ -29,6 +29,25 @@ class RobustEqOracleMixin:
         self.perform_n_times = perform_n_times
         self.threshold = math.ceil(validity_threshold * perform_n_times)
         self.eq_query_time = 0
+        self.num_steps_validation = 0
+
+        self.info = dict(
+            counterexamples_investigated=0,
+            counterexamples_validated=0,
+            counterexamples_invalidated=0,
+            no_majority_trace_found=0,
+            find_cex_called=0,
+            continued_after_no_majority_trace=0,
+            aborted_after_no_majority_trace=0,
+            detailed_oracle_info=dict(
+                params=dict(
+                    perform_n_times=self.perform_n_times,
+                    validity_threshold=self.threshold,
+                ),
+            ),
+            counterexamples_found=0,
+            no_counterexamples_found=0,
+        )
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -58,6 +77,7 @@ class RobustEqOracleMixin:
         assert outputs_sul != outputs_hyp
         assert outputs_sul[:-1] == outputs_hyp[:-1], f"Output in SUL and HYP should be identical except for last step! {outputs_sul[:-1]=} != {outputs_hyp[:-1]=}"
         assert outputs_sul[-1] != outputs_hyp[-1], f"Output in SUL and HYP should differ in the last step! {outputs_sul[-1]=} == {outputs_hyp[-1]=}"
+        self.info["counterexamples_investigated"] += 1
 
         def _query_sul(inputs_to_query):
             if hasattr(self, 'num_steps'):
@@ -69,6 +89,8 @@ class RobustEqOracleMixin:
             queries_before = self.sul.num_queries
 
             res = self.sul.query(inputs_to_query)
+
+            self.num_steps_validation += len(inputs_to_query)
 
             # do this so that the num_steps in the SUL don't get influenced by the oracle, as usual
             if self.sul.num_steps != steps_before:
@@ -111,11 +133,13 @@ class RobustEqOracleMixin:
             assert majority_trace[:-1] == outputs_hyp[:-1], f"{majority_trace[:-1]=} != {outputs_hyp[:-1]=}"
             assert majority_trace[-1] != outputs_hyp[-1], f"{majority_trace[-1]=} == {outputs_hyp[-1]=}"
 
+            self.info["counterexamples_validated"] += 1
             return True, inputs, majority_trace
 
         elif majority_trace is None:
             # cannot handle this - in what state should the SUL be? (Maybe need to reset CEX search)? Maybe just discard last input?
             log(f"For input sequence {inputs}, no output sequence occurred more than {self.threshold} times. ")
+            self.info["no_majority_trace_found"] += 1
             raise NoMajorityTrace
 
         elif majority_trace == outputs_hyp:
@@ -126,4 +150,5 @@ class RobustEqOracleMixin:
         while tuple(_query_sul(inputs)) != tuple(majority_trace):
             pass
 
+        self.info["counterexamples_invalidated"] += 1
         return False, inputs, majority_trace

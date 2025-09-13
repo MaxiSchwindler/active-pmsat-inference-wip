@@ -305,6 +305,12 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     info["learned_model_input_complete"] = learned_model.is_input_complete() if learned_model is not None else False
     info["ground_truth_input_complete"] = sul.automaton.is_input_complete()
 
+    if "learned_automaton_size" not in info:
+        info["learned_automaton_size"] = learned_model.size if learned_model is not None else 0
+
+    if "timed_out" not in info:
+        info["timed_out"] = False
+
     info["max_num_steps"] = max_num_steps
     info["glitch_percent"] = glitch_percent
     info["glitch_mode"] = glitch_mode
@@ -316,6 +322,9 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
     info["original_automaton_num_outputs"] = len(set(s.output for s in automaton.states))
 
     info["algorithm_kwargs"] = {k: v if is_builtin_type(v) else str(v) for k, v in (algorithm.kwargs | alg_kwargs).items()}
+
+    if oracle is not None:
+        info |= oracle.info
 
     # TODO also write learned model etc
     #  probably: create folder for this learning, like in generated_data

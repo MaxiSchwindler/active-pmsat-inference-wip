@@ -51,6 +51,7 @@ def run_activePmSATLearn(
     replay_glitches: bool | Sequence[str] = REPLAY_GLITCHES_DEFAULT,
     window_cex_processing: bool = False,
     random_steps_per_round: int = 0,
+    random_steps_per_round_with_reset_prob: int | tuple[int, float] = 0,
     transition_coverage_steps: int = 0,
 
     # postprocessing, only relevant if termination_mode = EqOracleTermination(...)
@@ -365,6 +366,24 @@ def run_activePmSATLearn(
             log_and_store_additional_traces(postprocessing_additional_traces_random_walks, round_info[learning_rounds], "random walks")
 
             traces = traces + postprocessing_additional_traces_random_walks
+
+        if random_steps_per_round_with_reset_prob:
+            if isinstance(random_steps_per_round_with_reset_prob, tuple):
+                kwargs = dict(num_steps=random_steps_per_round_with_reset_prob[0], reset_prob=random_steps_per_round_with_reset_prob[1])
+            else:
+                kwargs = dict(num_steps=random_steps_per_round_with_reset_prob)
+            postprocessing_additional_traces_random_walks_with_rp = do_random_walks_with_reset_prob(**kwargs, **common_processing_kwargs)
+
+            if deduplicate_traces:
+                remove_duplicate_traces(traces, postprocessing_additional_traces_random_walks_with_rp)  # TODO: does de-duplication affect anything? check!
+
+            if only_add_incongruent_traces:
+                peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+                remove_congruent_traces(peak_hyp, postprocessing_additional_traces_random_walks_with_rp)
+
+            log_and_store_additional_traces(postprocessing_additional_traces_random_walks_with_rp, round_info[learning_rounds], "random walks with reset")
+
+            traces = traces + postprocessing_additional_traces_random_walks_with_rp
 
         if transition_coverage_steps:
             peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
