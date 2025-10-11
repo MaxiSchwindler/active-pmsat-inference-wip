@@ -7,7 +7,7 @@ from inspect import signature, Signature, Parameter
 from typing import Callable, Any
 
 import aalpy.learning_algs
-from aalpy import run_KV
+from aalpy import run_KV, run_Lstar
 from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.oracles import RandomWMethodEqOracle
 
@@ -398,3 +398,36 @@ class KVWithGlitchesInOracle(MooreLearningAlgorithm):
 
         hyp, info = run_KV(**kwargs, cache_and_non_det_check=False, get_cex=get_cex)  #needs a patch in aalpy to use get_cex as wrapper for oracle.find_cex
         return hyp, info
+
+
+class _RobustLearningAlg(MooreLearningAlgorithm):
+    _non_robust_function = None
+    _use_cache = False
+
+    @classmethod
+    def function(cls, **kwargs):
+        from evaluation.robust_sul_wrapper import RobustSUL
+        sul = kwargs['sul']
+        kwargs['sul'] = RobustSUL(sul)
+
+        return cls._non_robust_function(**kwargs, cache_and_non_det_check=cls._use_cache)
+
+
+class RobustKV(_RobustLearningAlg):
+    _non_robust_function = run_KV
+    _use_cache = False
+
+
+class RobustLstar(_RobustLearningAlg):
+    _non_robust_function = run_Lstar
+    _use_cache = False
+
+
+class RobustKVCached(_RobustLearningAlg):
+    _non_robust_function = run_KV
+    _use_cache = True
+
+
+class RobustLstarCached(_RobustLearningAlg):
+    _non_robust_function = run_Lstar
+    _use_cache = True

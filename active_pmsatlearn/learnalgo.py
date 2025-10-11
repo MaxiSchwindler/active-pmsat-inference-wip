@@ -33,7 +33,7 @@ def run_activePmSATLearn(
     heuristic_function: str | HeuristicFunction = "intermediary",
     timeout: float | None = None,
     deduplicate_traces: bool = True,
-    only_replay_peak_glitches: bool = False,  #TODO: combine with replay_glitches (dict?)
+    only_replay_peak_glitches: bool = True,  #TODO: combine with replay_glitches (dict?)
     only_add_incongruent_traces: bool = False,
 
     # pmsat args
