@@ -1,0 +1,24 @@
+digraph MooreMachine_5States_3Inputs_4Outputs_b53cc3b194d54311806193cc7a1aafc0 {
+s1 [label="s1|o4", shape=record, style=rounded];
+s2 [label="s2|o2", shape=record, style=rounded];
+s3 [label="s3|o1", shape=record, style=rounded];
+s4 [label="s4|o3", shape=record, style=rounded];
+s5 [label="s5|o1", shape=record, style=rounded];
+s1 -> s2 [label="i1"];
+s1 -> s1 [label="i2"];
+s1 -> s3 [label="i3"];
+s2 -> s5 [label="i1"];
+s2 -> s1 [label="i2"];
+s2 -> s3 [label="i3"];
+s3 -> s3 [label="i1"];
+s3 -> s4 [label="i2"];
+s3 -> s5 [label="i3"];
+s4 -> s5 [label="i1"];
+s4 -> s4 [label="i2"];
+s4 -> s3 [label="i3"];
+s5 -> s4 [label="i1"];
+s5 -> s3 [label="i2"];
+s5 -> s3 [label="i3"];
+__start0 [shape=none, label=""];
+__start0 -> s1 [label=""];
+}
