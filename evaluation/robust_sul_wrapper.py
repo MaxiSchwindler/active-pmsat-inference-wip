@@ -6,7 +6,7 @@ class RobustSUL(SUL):
         self.sul = sul
 
         self.perform_n_times = perform_n_times
-        self.validity_threshold = validity_threshold
+        self.validity_threshold = validity_threshold * perform_n_times
 
         self.num_validation_queries = 0
         self.num_validation_steps = 0
@@ -25,30 +25,25 @@ class RobustSUL(SUL):
         self.num_validation_steps += (self.perform_n_times - 1) * len(word)
 
         traces = []
-        orig_ret_type = None
         for _ in range(self.perform_n_times):
             q = self.sul.query(word)
-            # if orig_ret_type is None:
-            #     orig_ret_type = type(q)
 
             traces.append(
-                # tuple(
-                    q
-                # )
+                q
             )
 
         majority_trace = None
         for trace in traces:
             if (c := traces.count(trace)) >= self.validity_threshold:
                 majority_trace = trace
-                # log(f"The output sequence {majority_trace} was returned {c} "
-                #     f"out of {self.perform_n_times} times, which is above the threshold ({self.threshold}).")
+                print(f"The output sequence {majority_trace} was returned {c} "
+                    f"out of {self.perform_n_times} times, which is above the threshold ({self.validity_threshold}).")
                 break
 
         if majority_trace is not None:
             return majority_trace
         else:
-            raise SystemExit(-1)
+            raise SystemExit("No Majority Trace found!")
 
     def __getattr__(self, item):
         return getattr(self.sul, item)
