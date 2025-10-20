@@ -402,7 +402,6 @@ class KVWithGlitchesInOracle(MooreLearningAlgorithm):
 
 class _RobustLearningAlg(MooreLearningAlgorithm):
     _non_robust_function = None
-    _use_cache = False
 
     @classmethod
     def function(cls, **kwargs):
@@ -410,24 +409,36 @@ class _RobustLearningAlg(MooreLearningAlgorithm):
         sul = kwargs['sul']
         kwargs['sul'] = RobustSUL(sul)
 
-        return cls._non_robust_function(**kwargs, cache_and_non_det_check=cls._use_cache)
+        return cls._non_robust_function(**kwargs)
 
 
 class RobustKV(_RobustLearningAlg):
     _non_robust_function = run_KV
-    _use_cache = False
+
+    default_parameters = dict(
+        cache_and_non_det_check=False
+    )
 
 
 class RobustLstar(_RobustLearningAlg):
     _non_robust_function = run_Lstar
-    _use_cache = False
+
+    default_parameters = dict(
+        cache_and_non_det_check=False
+    )
 
 
 class RobustKVCached(_RobustLearningAlg):
     _non_robust_function = run_KV
-    _use_cache = True
+
+    default_parameters = dict(
+        cache_and_non_det_check=True
+    )
 
 
 class RobustLstarCached(_RobustLearningAlg):
     _non_robust_function = run_Lstar
-    _use_cache = True
+
+    default_parameters = dict(
+        cache_and_non_det_check=True
+    )

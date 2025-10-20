@@ -160,8 +160,8 @@ def load_results(results_dir: str | Sequence[str], remove_traces_used_to_learn=T
                 if is_server_results:
                     replace_server_prefix(res, Path(_results_dir))
 
-                if add_num_cex_queries:
-                    res["num_cex_queries"] = calculate_num_cex_queries(res)
+                # if add_num_cex_queries:
+                #     res["num_cex_queries"] = calculate_num_cex_queries(res)
 
                 # add timeout as nice string
                 if 'params' in res.get('detailed_learning_info', {}):
