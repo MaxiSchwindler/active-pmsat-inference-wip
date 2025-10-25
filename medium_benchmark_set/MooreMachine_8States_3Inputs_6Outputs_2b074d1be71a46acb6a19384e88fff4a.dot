@@ -1,0 +1,36 @@
+digraph MooreMachine_8States_3Inputs_6Outputs_2b074d1be71a46acb6a19384e88fff4a {
+s1 [label="s1|o5", shape=record, style=rounded];
+s2 [label="s2|o4", shape=record, style=rounded];
+s3 [label="s3|o3", shape=record, style=rounded];
+s4 [label="s4|o1", shape=record, style=rounded];
+s5 [label="s5|o2", shape=record, style=rounded];
+s6 [label="s6|o6", shape=record, style=rounded];
+s7 [label="s7|o5", shape=record, style=rounded];
+s8 [label="s8|o3", shape=record, style=rounded];
+s1 -> s3 [label="i1"];
+s1 -> s2 [label="i2"];
+s1 -> s6 [label="i3"];
+s2 -> s5 [label="i1"];
+s2 -> s7 [label="i2"];
+s2 -> s1 [label="i3"];
+s3 -> s4 [label="i1"];
+s3 -> s1 [label="i2"];
+s3 -> s1 [label="i3"];
+s4 -> s8 [label="i1"];
+s4 -> s4 [label="i2"];
+s4 -> s2 [label="i3"];
+s5 -> s2 [label="i1"];
+s5 -> s4 [label="i2"];
+s5 -> s8 [label="i3"];
+s6 -> s5 [label="i1"];
+s6 -> s8 [label="i2"];
+s6 -> s3 [label="i3"];
+s7 -> s3 [label="i1"];
+s7 -> s4 [label="i2"];
+s7 -> s1 [label="i3"];
+s8 -> s4 [label="i1"];
+s8 -> s3 [label="i2"];
+s8 -> s6 [label="i3"];
+__start0 [shape=none, label=""];
+__start0 -> s1 [label=""];
+}

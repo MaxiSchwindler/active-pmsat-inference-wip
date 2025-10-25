@@ -83,7 +83,9 @@ venv2/
 /wip_learning_results_server
 /server_results/
 /local_results/
+/_archived_results/
 
 # charts (for now)
 evaluation/thesis_charts/*
 evaluation/thesis_charts*/
+new_charts/*
