@@ -350,7 +350,10 @@ class GSM(MooreLearningAlgorithm):
 
     positional_arguments = ()
 
-    aliases = {}
+    aliases = {
+        'rsrp': 'random_steps_per_round_with_reset_prob',
+        'spcs': 'state_prefix_coverage_steps_per_round',
+    }
 
     shortcuts = {
         'PURGE':    {'purge_mismatches': True},

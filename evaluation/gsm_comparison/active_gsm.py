@@ -10,7 +10,8 @@ from active_pmsatlearn import RobustEqOracleMixin
 from active_pmsatlearn.learnalgo import log_and_store_additional_traces, get_total_num_additional_traces
 
 from active_pmsatlearn.log import get_logger, DEBUG_EXT
-from active_pmsatlearn.processing import do_input_completeness_preprocessing, do_random_walks, do_cex_processing
+from active_pmsatlearn.processing import do_input_completeness_preprocessing, do_random_walks, do_cex_processing, \
+    do_random_walks_with_reset_prob, do_state_prefix_coverage
 from active_pmsatlearn.utils import trace_query
 from . import gsm
 
@@ -35,7 +36,9 @@ def run_activeGSM(
     input_completeness_preprocessing: bool | str = False,
     cex_processing: bool = False,
     extension_length: int = 2,
-    random_steps_per_round: int = 200,
+    random_steps_per_round: int = 0,
+    random_steps_per_round_with_reset_prob: int | tuple[int, float] = 0,
+    state_prefix_coverage_steps_per_round: int | tuple[int, float] | tuple[int, float, str] = 0,
 
     return_traces: bool = False,
     timeout: float | None = None,
@@ -98,6 +101,8 @@ def run_activeGSM(
         alphabet=alphabet,
         all_input_combinations=all_input_combinations,
     )
+    state_prefix_coverage_states_to_steps = defaultdict(int)
+    state_prefix_coverage_states_to_traces = defaultdict(int)
 
     logger.debug("Creating initial traces...")
     traces = [trace_query(sul, input_combination) for input_combination in all_input_combinations]
@@ -193,6 +198,7 @@ def run_activeGSM(
         logger.debug(f"Beginning postprocessing of hypotheses")
 
         if random_steps_per_round:
+            assert False
             postprocessing_additional_traces_random_walks = do_random_walks(random_steps_per_round,
                                                                             **common_processing_kwargs)
 
@@ -200,6 +206,32 @@ def run_activeGSM(
                                             round_info[learning_rounds], "random walks", store=return_traces)
 
             traces = traces + postprocessing_additional_traces_random_walks
+
+        if random_steps_per_round_with_reset_prob:
+            if isinstance(random_steps_per_round_with_reset_prob, tuple):
+                kwargs = dict(num_steps=random_steps_per_round_with_reset_prob[0], reset_prob=random_steps_per_round_with_reset_prob[1])
+            else:
+                kwargs = dict(num_steps=random_steps_per_round_with_reset_prob)
+            postprocessing_additional_traces_random_walks_with_rp = do_random_walks_with_reset_prob(**kwargs, **common_processing_kwargs)
+
+            log_and_store_additional_traces(postprocessing_additional_traces_random_walks_with_rp, round_info[learning_rounds], "random walks with reset")
+
+            traces = traces + postprocessing_additional_traces_random_walks_with_rp
+
+        if state_prefix_coverage_steps_per_round:
+            if isinstance(state_prefix_coverage_steps_per_round, tuple):
+                kwargs = dict(num_steps=state_prefix_coverage_steps_per_round[0], reset_prob=state_prefix_coverage_steps_per_round[1])
+                if len(state_prefix_coverage_steps_per_round) == 3:
+                    kwargs["mode"] = state_prefix_coverage_steps_per_round[2]
+            else:
+                kwargs = dict(num_steps=state_prefix_coverage_steps_per_round)
+            postprocessing_additional_traces_state_prefix_processing = do_state_prefix_coverage(hypothesis=hyp, **kwargs, **common_processing_kwargs,
+                                                                                                states_to_steps=state_prefix_coverage_states_to_steps,
+                                                                                                states_to_traces=state_prefix_coverage_states_to_traces)
+
+            log_and_store_additional_traces(postprocessing_additional_traces_state_prefix_processing, round_info[learning_rounds], "state prefix coverage steps")
+
+            traces = traces + postprocessing_additional_traces_state_prefix_processing
 
         if cex is not None and cex_processing:
             postprocessing_additional_traces_cex = do_cex_processing(cex, **common_processing_kwargs)

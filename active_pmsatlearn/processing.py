@@ -1,6 +1,6 @@
 import random
 
-from typing import Any, Sequence
+from typing import Any, Sequence, Literal
 
 from aalpy import MooreMachine, KWayTransitionCoverageEqOracle
 from active_pmsatlearn.defs import *
@@ -345,6 +345,65 @@ def do_random_walks_with_reset_prob(num_steps: int, sul: SupportedSUL, alphabet:
                 break
         queries.append(query)
 
+    new_traces = []
+    for query in queries:
+        new_traces.append(trace_query(sul, query))
+    return new_traces
+
+
+def do_state_prefix_coverage(num_steps: int, hypothesis: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
+                             reset_prob: float = 0.09, mode: Literal["random", "depth_first", "balanced_traces", "balanced_steps"] = "balanced_traces",
+                             states_to_steps: dict[tuple[Input, ...], int] = None, states_to_traces: dict[tuple[Input, ...], int] = None) -> list[Trace]:
+    assert mode in ("random", "depth_first", "balanced_traces", "balanced_steps")
+    if mode == "balanced_traces":
+        assert states_to_traces is not None
+    if mode == "balanced_steps":
+        assert states_to_steps is not None
+
+    hypothesis.compute_prefixes()
+    states_to_cover = [s for s in hypothesis.states]
+
+    if mode == "depth_first":
+        # reverse sort the states by length of their access sequences
+        # first do the random walk on the state with the longest access sequence
+        states_to_cover.sort(key=lambda s: len(s.prefix), reverse=True)
+    elif mode == "balanced_traces":
+        if len(states_to_steps) == 0:
+            random.shuffle(states_to_cover)
+        else:
+            states_to_cover.sort(key=lambda s: states_to_traces.get(s.prefix, 0), reverse=False)
+    elif mode == "balanced_steps":
+        if len(states_to_steps) == 0:
+            random.shuffle(states_to_cover)
+        else:
+            states_to_cover.sort(key=lambda s: states_to_steps.get(s.prefix, 0), reverse=False)
+    else:
+        random.shuffle(states_to_cover)
+
+    queries = []
+    remaining_steps = num_steps
+
+    while len(states_to_cover) > 0 and remaining_steps > 0:
+        state = states_to_cover.pop(0)
+        if len(state.prefix) > remaining_steps:
+            # this state cannot be covered anymore in this round - remove
+            continue
+
+        query = [*state.prefix]
+        remaining_steps -= len(state.prefix)
+        while remaining_steps > 0:
+            inp = random.choice(alphabet)
+            remaining_steps -= 1
+            query.append(inp)
+            if random.random() < reset_prob:
+                break
+        queries.append(query)
+        states_to_steps[state.prefix] += (len(query) - len(state.prefix))
+        states_to_traces[state.prefix] += 1
+        states_to_cover.append(state)
+
+    # print(states_to_steps)
+    # print(states_to_traces)
     new_traces = []
     for query in queries:
         new_traces.append(trace_query(sul, query))

@@ -44,6 +44,7 @@ def run_active_gsm(sul, oracle, failure_rate):
         timeout=30,
         print_level=2,
         return_data=True,
+        state_prefix_coverage_steps_per_round=(50, 0.09)
     )
 
 
