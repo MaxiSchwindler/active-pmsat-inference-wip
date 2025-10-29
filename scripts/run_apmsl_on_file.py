@@ -50,6 +50,10 @@ def run_apmsl(sul, oracle):
         timeout=200,
         print_level=2,
         return_data=True,
+        avoid_replaying_multiple_times=True,
+        glitch_processing=True,
+        replay_glitches=True,
+        state_prefix_coverage_steps_per_round=(200, 0.09, "balanced_traces", True),
         **kwargs
     )
 

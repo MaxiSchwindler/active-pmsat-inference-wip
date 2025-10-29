@@ -11,7 +11,7 @@ from active_pmsatlearn.learnalgo import log_and_store_additional_traces, get_tot
 
 from active_pmsatlearn.log import get_logger, DEBUG_EXT
 from active_pmsatlearn.processing import do_input_completeness_preprocessing, do_random_walks, do_cex_processing, \
-    do_random_walks_with_reset_prob, do_state_prefix_coverage
+    do_random_walks_with_reset_prob, do_state_prefix_coverage_on_hyp
 from active_pmsatlearn.utils import trace_query
 from . import gsm
 
@@ -225,7 +225,7 @@ def run_activeGSM(
                     kwargs["mode"] = state_prefix_coverage_steps_per_round[2]
             else:
                 kwargs = dict(num_steps=state_prefix_coverage_steps_per_round)
-            postprocessing_additional_traces_state_prefix_processing = do_state_prefix_coverage(hypothesis=hyp, **kwargs, **common_processing_kwargs,
+            postprocessing_additional_traces_state_prefix_processing = do_state_prefix_coverage_on_hyp(hypothesis=hyp, **kwargs, **common_processing_kwargs,
                                                                                                 states_to_steps=state_prefix_coverage_states_to_steps,
                                                                                                 states_to_traces=state_prefix_coverage_states_to_traces)
 

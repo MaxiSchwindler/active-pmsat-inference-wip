@@ -53,6 +53,8 @@ def run_activePmSATLearn(
     random_steps_per_round: int = 0,
     random_steps_per_round_with_reset_prob: int | tuple[int, float] = 0,
     transition_coverage_steps: int = 0,
+    state_prefix_coverage_steps_per_round: int | tuple[int, float] | tuple[int, float, str] | tuple[int, float, str, bool] = 0,
+    avoid_replaying_multiple_times = False,
 
     # postprocessing, only relevant if termination_mode = EqOracleTermination(...)
     cex_processing: bool = True,
@@ -189,6 +191,11 @@ def run_activePmSATLearn(
         alphabet=alphabet,
         all_input_combinations=all_input_combinations,
     )
+    state_prefix_coverage_states_to_steps = defaultdict(int)
+    state_prefix_coverage_states_to_traces = defaultdict(int)
+
+    replayed_glitches = set() if avoid_replaying_multiple_times else None
+    reproduced_glitches = set() if avoid_replaying_multiple_times else None
 
     logger.debug("Creating initial traces...")
     traces = [trace_query(sul, input_combination) for input_combination in all_input_combinations]
@@ -303,7 +310,8 @@ def run_activePmSATLearn(
             postprocessing_additional_traces_glitch = do_glitch_processing(hyps=hypotheses,
                                                                            suffix_mode=glitch_processing,
                                                                            traces_used_to_learn_hyp=traces_used_to_learn,
-                                                                           **common_processing_kwargs)
+                                                                           **common_processing_kwargs,
+                                                                           already_reproduced=reproduced_glitches)
 
             if deduplicate_traces:
                 remove_duplicate_traces(traces, postprocessing_additional_traces_glitch)  # TODO: does de-duplication affect anything? check!
@@ -340,7 +348,8 @@ def run_activePmSATLearn(
             postprocessing_additional_traces_replay = do_replay_glitches(hyps=fake_hyp_window,
                                                                          traces_used_to_learn=traces_used_to_learn,
                                                                          suffix_modes=replay_glitches,
-                                                                         **common_processing_kwargs)
+                                                                         **common_processing_kwargs,
+                                                                         already_replayed=replayed_glitches)
 
             if deduplicate_traces:
                 remove_duplicate_traces(traces, postprocessing_additional_traces_replay)
@@ -384,6 +393,45 @@ def run_activePmSATLearn(
             log_and_store_additional_traces(postprocessing_additional_traces_random_walks_with_rp, round_info[learning_rounds], "random walks with reset")
 
             traces = traces + postprocessing_additional_traces_random_walks_with_rp
+
+        if state_prefix_coverage_steps_per_round:
+            cover_whole_window = False
+            if isinstance(state_prefix_coverage_steps_per_round, tuple):
+                kwargs = dict(num_steps=state_prefix_coverage_steps_per_round[0], reset_prob=state_prefix_coverage_steps_per_round[1])
+                if len(state_prefix_coverage_steps_per_round) >= 3:
+                    kwargs["mode"] = state_prefix_coverage_steps_per_round[2]
+                if len(state_prefix_coverage_steps_per_round) >= 4:
+                    cover_whole_window = state_prefix_coverage_steps_per_round[3]
+            else:
+                kwargs = dict(num_steps=state_prefix_coverage_steps_per_round)
+
+            if cover_whole_window:
+                hyps_to_cover = [h[0] for ns, h in hypotheses.items()]
+            else:
+                peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]
+                hyps_to_cover = [peak_hyp]
+
+            states_to_cover = []
+            added_prefixes = set()
+            for hyp in hyps_to_cover:
+                hyp.compute_prefixes()
+                for s in hyp.states:
+                    if s.prefix is None:
+                        continue
+                    if s.prefix in added_prefixes:
+                        continue
+                    added_prefixes.add(s.prefix)
+                    states_to_cover.append(s)
+
+            postprocessing_additional_traces_state_prefix_processing = do_state_prefix_coverage(
+                states_to_cover=states_to_cover, **kwargs, **common_processing_kwargs,
+                states_to_steps=state_prefix_coverage_states_to_steps,
+                states_to_traces=state_prefix_coverage_states_to_traces)
+
+            log_and_store_additional_traces(postprocessing_additional_traces_state_prefix_processing,
+                                            round_info[learning_rounds], "state prefix coverage steps")
+
+            traces = traces + postprocessing_additional_traces_state_prefix_processing
 
         if transition_coverage_steps:
             peak_hyp = get_absolute_peak_hypothesis(hypotheses, scores)[0]

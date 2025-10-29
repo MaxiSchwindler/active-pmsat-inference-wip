@@ -2,7 +2,7 @@ import random
 
 from typing import Any, Sequence, Literal
 
-from aalpy import MooreMachine, KWayTransitionCoverageEqOracle
+from aalpy import MooreMachine, KWayTransitionCoverageEqOracle, MooreState
 from active_pmsatlearn.defs import *
 from active_pmsatlearn.log import get_logger
 from active_pmsatlearn.utils import trace_query, get_prefixes, get_input_from_stoc_trans
@@ -91,7 +91,8 @@ def do_cex_processing(cex: Trace, sul: SupportedSUL, alphabet: list[Input], all_
 
 
 def do_glitch_processing(hyps: HypothesesWindow, traces_used_to_learn_hyp: list[Trace], suffix_mode: str,
-                         sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+                         sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
+                         already_reproduced: set = None) -> list[Trace]:
     """
     Glitch processing. For every glitched transition from state s with input i, query traces for
     s.prefix + i + <specified suffixes>. Note that only one prefix is queried, the one of the state with
@@ -108,7 +109,11 @@ def do_glitch_processing(hyps: HypothesesWindow, traces_used_to_learn_hyp: list[
     """
     assert suffix_mode in ('all_suffixes', 'random_suffix')
     new_traces = []
-    already_performed_prefixes = set()
+
+    if already_reproduced is not None:
+        already_performed_prefixes = already_reproduced
+    else:
+        already_performed_prefixes = set()
 
     for hyp, hyp_stoc, pmsat_info in hyps.values():
         hyp_str = f"{len(hyp.states)}-state hypothesis {id(hyp)}"
@@ -216,7 +221,8 @@ def do_window_counterexample_processing(hypotheses: HypothesesWindow, sul: Suppo
 
 
 def do_replay_glitches(hyps: HypothesesWindow, traces_used_to_learn: list[Trace], suffix_modes: Sequence[str],
-                       sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+                       sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
+                       already_replayed: set = None) -> list[Trace]:
     """
     Replay the traces which pmsat_learn marked as containing glitches.
     :param hyps: hypotheses window
@@ -231,8 +237,12 @@ def do_replay_glitches(hyps: HypothesesWindow, traces_used_to_learn: list[Trace]
     :return: list of traces
     """
     new_traces = []
-    replayed_trace_indices = set()
-    replayed_trace_step_pairs = set()
+    if already_replayed is not None:
+        replayed_trace_indices = already_replayed
+        replayed_trace_step_pairs = already_replayed
+    else:
+        replayed_trace_indices = set()
+        replayed_trace_step_pairs = set()
 
     for hyp, hyp_stoc, pmsat_info in hyps.values():
         hyp_str = f"{len(hyp.states)}-state hypothesis {id(hyp)}"
@@ -351,17 +361,30 @@ def do_random_walks_with_reset_prob(num_steps: int, sul: SupportedSUL, alphabet:
     return new_traces
 
 
-def do_state_prefix_coverage(num_steps: int, hypothesis: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
+def do_state_prefix_coverage_on_hyp(num_steps: int, hypothesis: SupportedAutomaton, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
                              reset_prob: float = 0.09, mode: Literal["random", "depth_first", "balanced_traces", "balanced_steps"] = "balanced_traces",
                              states_to_steps: dict[tuple[Input, ...], int] = None, states_to_traces: dict[tuple[Input, ...], int] = None) -> list[Trace]:
+    hypothesis.compute_prefixes()
+    states_to_cover = [s for s in hypothesis.states if s.prefix is not None]  # filter out unreachable states
+    return do_state_prefix_coverage(num_steps=num_steps, states_to_cover=states_to_cover, sul=sul,
+                                    alphabet=alphabet, all_input_combinations=all_input_combinations,
+                                    reset_prob=reset_prob, mode=mode,
+                                    states_to_traces=states_to_traces, states_to_steps=states_to_steps)
+
+def do_state_prefix_coverage(num_steps: int, states_to_cover: list[MooreState], sul: SupportedSUL,
+                             alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
+                             reset_prob: float = 0.09, mode: Literal[
+            "random", "depth_first", "balanced_traces", "balanced_steps"] = "balanced_traces",
+                             states_to_steps: dict[tuple[Input, ...], int] = None,
+                             states_to_traces: dict[tuple[Input, ...], int] = None) -> list[Trace]:
     assert mode in ("random", "depth_first", "balanced_traces", "balanced_steps")
     if mode == "balanced_traces":
         assert states_to_traces is not None
     if mode == "balanced_steps":
         assert states_to_steps is not None
 
-    hypothesis.compute_prefixes()
-    states_to_cover = [s for s in hypothesis.states]
+    states_to_cover = [s for s in states_to_cover if s.prefix is not None]  # filter out unreachable states
+    assert len(states_to_cover) > 0, f"No prefixes!"
 
     if mode == "depth_first":
         # reverse sort the states by length of their access sequences
