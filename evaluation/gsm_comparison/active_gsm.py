@@ -19,6 +19,7 @@ logger = get_logger("ActiveGSM")
 
 SupportedAutomaton: TypeAlias = MooreMachine | MealyMachine
 INPUT_COMPLETENESS_PROCESSING_DEFAULT = 'random_suffix'
+CEX_PROCESSING_DEFAULT = 'all_suffixes'
 
 
 def run_activeGSM(
@@ -34,7 +35,7 @@ def run_activeGSM(
     eq_oracle: RobustEqOracleMixin = None,
     use_dis_as_cex: bool = False,
     input_completeness_preprocessing: bool | str = False,
-    cex_processing: bool = False,
+    cex_processing: bool | str = CEX_PROCESSING_DEFAULT,
     extension_length: int = 2,
     random_steps_per_round: int = 0,
     random_steps_per_round_with_reset_prob: int | tuple[int, float] = 0,
@@ -62,7 +63,10 @@ def run_activeGSM(
     """
     if input_completeness_preprocessing is True:
         input_completeness_preprocessing = INPUT_COMPLETENESS_PROCESSING_DEFAULT
+    if cex_processing is True:
+        cex_processing = CEX_PROCESSING_DEFAULT
     assert input_completeness_preprocessing in ('random_suffix', 'all_suffixes') or not input_completeness_preprocessing
+    assert cex_processing in ('random_suffix', 'all_suffixes') or not cex_processing
     if eq_oracle is not None:
         assert isinstance(eq_oracle, RobustEqOracleMixin)
         assert not use_dis_as_cex
@@ -234,7 +238,7 @@ def run_activeGSM(
             traces = traces + postprocessing_additional_traces_state_prefix_processing
 
         if cex is not None and cex_processing:
-            postprocessing_additional_traces_cex = do_cex_processing(cex, **common_processing_kwargs)
+            postprocessing_additional_traces_cex = do_cex_processing(cex, **common_processing_kwargs, suffix_mode=cex_processing)
 
             log_and_store_additional_traces(postprocessing_additional_traces_cex,
                                             round_info[learning_rounds], "cex", store=return_traces)

@@ -19,6 +19,7 @@ logger = get_logger("APMSL")
 INPUT_COMPLETENESS_PROCESSING_DEFAULT = 'random_suffix'
 GLITCH_PROCESSING_DEFAULT = 'random_suffix'
 REPLAY_GLITCHES_DEFAULT = ('original_suffix', 'random_suffix')
+CEX_PROCESSING_DEFAULT = 'all_suffixes'
 
 
 def run_activePmSATLearn(
@@ -57,7 +58,7 @@ def run_activePmSATLearn(
     avoid_replaying_multiple_times = False,
 
     # postprocessing, only relevant if termination_mode = EqOracleTermination(...)
-    cex_processing: bool = True,
+    cex_processing: bool | str = CEX_PROCESSING_DEFAULT,
     discard_glitched_traces: bool = True,
     add_cex_as_hard_clauses: bool = True,
 
@@ -119,9 +120,12 @@ def run_activePmSATLearn(
         glitch_processing = GLITCH_PROCESSING_DEFAULT
     if replay_glitches is True:
         replay_glitches = REPLAY_GLITCHES_DEFAULT
+    if cex_processing is True:
+        cex_processing = CEX_PROCESSING_DEFAULT
 
     assert input_completeness_preprocessing in ('random_suffix', 'all_suffixes') or not input_completeness_preprocessing
     assert glitch_processing in ('random_suffix', 'all_suffixes') or not glitch_processing
+    assert cex_processing in ('random_suffix', 'all_suffixes') or not cex_processing
     assert (isinstance(replay_glitches, Sequence) and all(g in ('original_suffix', 'random_suffix') for g in replay_glitches)) or not replay_glitches
     assert isinstance(random_steps_per_round, int)
     assert isinstance(transition_coverage_steps, int)
@@ -457,7 +461,7 @@ def run_activePmSATLearn(
             assert eq_oracle_cex_outputs is not None, f"Must have cex outputs during postprocessing when using EqOracleTermination!"
 
             if cex_processing:
-                postprocessing_additional_traces_cex = do_cex_processing(eq_oracle_cex, **common_processing_kwargs)
+                postprocessing_additional_traces_cex = do_cex_processing(eq_oracle_cex, **common_processing_kwargs, suffix_mode=cex_processing)
 
                 if deduplicate_traces:
                     remove_duplicate_traces(traces, postprocessing_additional_traces_cex)

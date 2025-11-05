@@ -71,19 +71,32 @@ def do_input_completeness_preprocessing(hyps: HypothesesWindow, suffix_mode: str
     return new_traces
 
 
-def do_cex_processing(cex: Trace, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]]) -> list[Trace]:
+def do_cex_processing(cex: Trace, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
+                      suffix_mode: str) -> list[Trace]:
     """
     Counterexample processing, like in Active RPNI
     :param sul: system under learning
     :param cex: counterexample
     :param all_input_combinations: all combinations of length <extension length> of the input alphabet
-    :param log: a function to log info to
+    :param suffix_mode: which suffixes to append to (state.prefix + glitched_input). One of:
+                 'all_suffixes': all input combinations, i.e. alphabet^extension_length
+                 'random_suffix': one random sequence of input combinations from all_input_combinations, i.e. random.choice(alphabet^extension_length)
     :return: list of new traces
     """
     logger.debug("Processing counterexample to produce new traces...")
+
+    assert suffix_mode in ('all_suffixes', 'random_suffix')
+
+    if suffix_mode == 'all_suffixes':
+        suffixes = all_input_combinations
+    elif suffix_mode == 'random_suffix':
+        suffixes = [random.choice(all_input_combinations)]
+    else:
+        assert False
+
     new_traces = []
     for prefix in get_prefixes(cex):
-        for suffix in all_input_combinations:
+        for suffix in suffixes:
             trace = trace_query(sul, list(prefix) + list(suffix))
             new_traces.append(trace)
 
