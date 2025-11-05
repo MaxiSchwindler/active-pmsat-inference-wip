@@ -20,9 +20,14 @@ def get_num_outputs(traces: Sequence[Trace]) -> int:
     return len(get_outputs(traces))
 
 
-def get_prefixes(lst: Sequence):
+def get_prefixes(lst: Sequence) -> list[tuple[Input, ...]]:
     """ Get all prefixes from a given sequence"""
     return [lst[:i] for i in range(1, len(lst) + 1)]
+
+
+def get_prefix_suffix_pairs(lst: Sequence) -> list[tuple[Sequence, Sequence]]:
+    """Return all (prefix, suffix) pairs for a given sequence."""
+    return [(lst[:i], lst[i:]) for i in range(1, len(lst) + 1)]
 
 
 def trace_query(sul: SUL, inputs: Sequence[Input]) -> Trace:
