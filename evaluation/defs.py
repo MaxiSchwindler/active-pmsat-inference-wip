@@ -283,6 +283,8 @@ class APMSL(MooreLearningAlgorithm):
         'rs': 'random_steps_per_round',
         'rsrp': 'random_steps_per_round_with_reset_prob',
         'tc': 'transition_coverage_steps',
+        'spcs': 'state_prefix_coverage_steps_per_round',
+        'scps': 'state_prefix_coverage_steps_per_round',  # for typos...
 
         'cp': 'cex_processing',
         'dgt': 'discard_glitched_traces',
@@ -353,6 +355,8 @@ class GSM(MooreLearningAlgorithm):
     aliases = {
         'rsrp': 'random_steps_per_round_with_reset_prob',
         'spcs': 'state_prefix_coverage_steps_per_round',
+        'scps': 'state_prefix_coverage_steps_per_round',  # typos...
+        'cp': 'cex_processing',
     }
 
     shortcuts = {
