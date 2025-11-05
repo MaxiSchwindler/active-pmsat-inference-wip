@@ -5,7 +5,7 @@ from typing import Any, Sequence, Literal
 from aalpy import MooreMachine, KWayTransitionCoverageEqOracle, MooreState
 from active_pmsatlearn.defs import *
 from active_pmsatlearn.log import get_logger
-from active_pmsatlearn.utils import trace_query, get_prefixes, get_input_from_stoc_trans
+from active_pmsatlearn.utils import trace_query, get_prefixes, get_input_from_stoc_trans, get_prefix_suffix_pairs
 from evaluation.utils import TracedMooreSUL
 from pmsatlearn.learnalgo import Input
 
@@ -71,34 +71,46 @@ def do_input_completeness_preprocessing(hyps: HypothesesWindow, suffix_mode: str
     return new_traces
 
 
-def do_cex_processing(cex: Trace, sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
+def do_cex_processing(cex: Sequence[Input], sul: SupportedSUL, alphabet: list[Input], all_input_combinations: list[tuple[Input, ...]],
                       suffix_mode: str) -> list[Trace]:
     """
     Counterexample processing, like in Active RPNI
     :param sul: system under learning
     :param cex: counterexample
     :param all_input_combinations: all combinations of length <extension length> of the input alphabet
-    :param suffix_mode: which suffixes to append to (state.prefix + glitched_input). One of:
+    :param suffix_mode: which suffixes to append to each prefix. One of:
                  'all_suffixes': all input combinations, i.e. alphabet^extension_length
-                 'random_suffix': one random sequence of input combinations from all_input_combinations, i.e. random.choice(alphabet^extension_length)
+                 'random_suffix': one random suffix from all_input_combinations, i.e. random.choice(alphabet^extension_length)
     :return: list of new traces
     """
     logger.debug("Processing counterexample to produce new traces...")
 
     assert suffix_mode in ('all_suffixes', 'random_suffix')
 
+    queries = []
+
     if suffix_mode == 'all_suffixes':
-        suffixes = all_input_combinations
+        for prefix in get_prefixes(cex):
+            for suffix in all_input_combinations:
+                queries.append(tuple(list(prefix) + list(suffix)))
+
     elif suffix_mode == 'random_suffix':
-        suffixes = [random.choice(all_input_combinations)]
-    else:
-        assert False
+        assert len(alphabet) > 1
+
+        for prefix, orig_suffix in get_prefix_suffix_pairs(cex):
+            if len(orig_suffix) == 0:
+                suffix = random.choice(alphabet)
+            else:
+                suffix = random.choice([a for a in alphabet if a != orig_suffix[0]])
+
+            queries.append(
+                list(prefix) + [suffix]
+            )
 
     new_traces = []
-    for prefix in get_prefixes(cex):
-        for suffix in suffixes:
-            trace = trace_query(sul, list(prefix) + list(suffix))
-            new_traces.append(trace)
+    for query in queries:
+        trace = trace_query(sul, query)
+        new_traces.append(trace)
 
     return new_traces
 
