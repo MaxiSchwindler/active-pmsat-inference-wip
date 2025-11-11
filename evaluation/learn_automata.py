@@ -425,7 +425,9 @@ def validate_arguments(args):
 
 def main():
     parser = argparse.ArgumentParser(description='Learn automata with different algorithms & oracles. '
-                                                 'You can also run interactively.')
+                                                 'You can also run interactively.',
+                                     fromfile_prefix_chars='@')
+    parser.convert_arg_line_to_args = convert_arg_line_to_args
     parser.add_argument('-a', '--algorithms', type=AlgorithmWrapper.validate_type, nargs="+", required=True,
                         help='Learning algorithms to learn automata with')
     parser.add_argument('-e', '--explain', action=AlgorithmWrapper.ExplainAlgorithmAction,

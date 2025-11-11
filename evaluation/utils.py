@@ -93,6 +93,14 @@ def get_user_choices(message: str, choices: Sequence[str]) -> Sequence[str]:
         print("Invalid choice(s) entered, please try again.\n")
 
 
+def convert_arg_line_to_args(line):
+    # Custom function to allow comments in files
+    line = line.strip()
+    if not line or line.startswith('#'):  # Skip blank lines and comments
+        return []
+    return [line]  # don't split line
+
+
 class MaxStepsReached(Exception):
     pass
 

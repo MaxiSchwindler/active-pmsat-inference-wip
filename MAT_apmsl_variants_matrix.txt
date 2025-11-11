@@ -1,0 +1,55 @@
+# only cex processing variants
+APMSL(NO_GP, NO_REP, cp='all_suffixes')
+APMSL(NO_GP, NO_REP, cp='random_suffix')
+APMSL(NO_ICP, NO_GP, NO_REP, cp='all_suffixes')
+APMSL(NO_ICP, NO_GP, NO_REP, cp='random_suffix')
+
+# no cex processing
+APMSL(NO_CP)
+APMSL(NO_CP,wcp=True)
+
+APMSL(NO_CP,spcs=(25,0.09,'balanced_traces'))
+APMSL(NO_GP,NO_REP,NO_CP,spcs=(25,0.09,'balanced_traces'))
+APMSL(NO_ICP,NO_GP,NO_REP,NO_CP,spcs=(25,0.09,'balanced_traces'))
+
+APMSL(NO_CP,rsrp=(25,0.09))
+APMSL(NO_GP,NO_REP,NO_CP,rsrp=(25,0.09))
+APMSL(NO_ICP,NO_GP,NO_REP,NO_CP,rsrp=(25,0.09))
+
+# cex + glitchaware
+APMSL(cp='all_suffixes')
+APMSL(cp='random_suffix')
+
+# cex + wcp
+APMSL(NO_GP, NO_REP, cp='random_suffix', wcp=True)
+APMSL(cp='random_suffix', wcp=True)
+
+# spcs + glitchaware
+APMSL(spcs=(25,0.09,'balanced_traces'),cp='random_suffix')
+APMSL(spcs=(100,0.09,'balanced_traces'),cp='random_suffix')
+APMSL(spcs=(200,0.09,'balanced_traces'),cp='random_suffix')
+
+# spcs without glitchaware
+APMSL(NO_GP,NO_REP,spcs=(25,0.09,'balanced_traces'),cp='random_suffix')
+APMSL(NO_GP,NO_REP,spcs=(100,0.09,'balanced_traces'),cp='random_suffix')
+APMSL(NO_GP,NO_REP,spcs=(200,0.09,'balanced_traces'),cp='random_suffix')
+
+# spcs without ipc and glitchaware
+APMSL(NO_ICP,NO_GP,NO_REP,spcs=(25,0.09,'balanced_traces'),cp='random_suffix')
+
+# spcs + wcp
+APMSL(spcs=(25,0.09,'balanced_traces'),wcp=True,cp='random_suffix')
+APMSL(NO_GP,NO_REP,spcs=(25,0.09,'balanced_traces'),wcp=True,cp='random_suffix')
+
+# rsrp + glitchaware
+APMSL(rsrp=(25,0.09),cp='random_suffix')
+# APMSL(rsrp=(100,0.09),cp='random_suffix')
+APMSL(rsrp=(200,0.09),cp='random_suffix')
+
+# rsrp without glitchaware
+APMSL(NO_GP,NO_REP,rsrp=(25,0.09),cp='random_suffix')
+# APMSL(NO_GP,NO_REP,rsrp=(100,0.09),cp='random_suffix')
+APMSL(NO_GP,NO_REP,rsrp=(200,0.09),cp='random_suffix')
+
+# rsrp without ipc and glitchaware
+APMSL(NO_ICP,NO_GP,NO_REP,rsrp=(25,0.09),cp='random_suffix')
