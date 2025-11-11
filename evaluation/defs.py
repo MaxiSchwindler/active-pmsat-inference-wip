@@ -48,12 +48,24 @@ class RobustRandomWalkOracleWithoutAbort(RobustRandomWalkOracle):
             max_num_tries=None,
         )
 
+class RobustRandomWalkOracleWithoutAbortFixed(RobustRandomWalkEqOracle):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            alphabet=sul.automaton.get_input_alphabet(),
+            sul=sul,
+            num_steps=50_000,
+            reset_after_cex=True,
+            reset_prob=0.09,
+            max_num_tries=None
+        )
+
 
 oracles = {
     "None": lambda sul: None,
     "Perfect": RobustPerfectMooreOracle,
     "RandomWithAbort": RobustRandomWalkOracle,
     "RandomWithoutAbort": RobustRandomWalkOracleWithoutAbort,
+    "RandomWithoutAbortFixed": RobustRandomWalkOracleWithoutAbortFixed,
 }
 
 
