@@ -99,12 +99,12 @@ def do_cex_processing(cex: Sequence[Input], sul: SupportedSUL, alphabet: list[In
 
         for prefix, orig_suffix in get_prefix_suffix_pairs(cex):
             if len(orig_suffix) == 0:
-                suffix = random.choice(alphabet)
+                suffix = random.choice(all_input_combinations)
             else:
-                suffix = random.choice([a for a in alphabet if a != orig_suffix[0]])
+                suffix = random.choice([a for a in all_input_combinations if a[0] != orig_suffix[0]])
 
             queries.append(
-                list(prefix) + [suffix]
+                list(prefix) + list(suffix)
             )
 
     new_traces = []
@@ -238,7 +238,9 @@ def do_window_counterexample_processing(hypotheses: HypothesesWindow, sul: Suppo
         cex = hyp_a.find_distinguishing_seq(hyp_a.initial_state, hyp_b.initial_state, alphabet)
         if cex is not None and tuple(cex) not in performed_prefixes:
             logger.debug_ext(f"CEX between {len(hyp_a.states)}-state hypothesis {id(hyp_a)} and {len(hyp_b.states)}-state hypothesis {id(hyp_b)}: {cex}")
-            new_traces.extend(do_cex_processing(cex=cex, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations))
+            new_traces.extend(
+                do_cex_processing(cex=cex, sul=sul, alphabet=alphabet, all_input_combinations=all_input_combinations, suffix_mode="random_suffix")
+            )
             for p in get_prefixes(cex):
                 performed_prefixes.add(tuple(p))
 
