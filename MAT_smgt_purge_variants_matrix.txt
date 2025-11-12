@@ -1,0 +1,41 @@
+# only cex processing variants
+GSM(PURGE,cp='all_suffixes')
+GSM(PURGE,cp='random_suffix')
+
+# ... plus ic
+GSM(PURGE,ICP,cp='all_suffixes')
+GSM(PURGE,ICP,cp='random_suffix')
+
+# only scps
+GSM(PURGE,NO_CP,spcs=(25,0.09,'balanced_traces'))
+GSM(PURGE,NO_CP,spcs=(100,0.09,'balanced_traces'))
+GSM(PURGE,NO_CP,spcs=(200,0.09,'balanced_traces'))
+
+# scps plus ic
+GSM(PURGE,NO_CP,ICP,spcs=(25,0.09,'balanced_traces'))
+GSM(PURGE,NO_CP,ICP,spcs=(200,0.09,'balanced_traces'))
+
+# scps plus cp
+GSM(PURGE,spcs=(25,0.09,'balanced_traces'),cp='random_suffix')
+GSM(PURGE,spcs=(200,0.09,'balanced_traces'),cp='random_suffix')
+
+# scps plus cp plus icp
+GSM(PURGE,ICP,spcs=(25,0.09,'balanced_traces'),cp='random_suffix')
+GSM(PURGE,ICP,spcs=(200,0.09,'balanced_traces'),cp='random_suffix')
+
+# only rsrp
+GSM(PURGE,NO_CP,rsrp=(25,0.09))
+GSM(PURGE,NO_CP,rsrp=(100,0.09))
+GSM(PURGE,NO_CP,rsrp=(200,0.09))
+
+# rsrp plus cp
+GSM(PURGE,rsrp=(25,0.09),cp='random_suffix')
+GSM(PURGE,rsrp=(200,0.09),cp='random_suffix')
+
+# rsrp plus ic
+GSM(PURGE,NO_CP,ICP,rsrp=(25,0.09))
+GSM(PURGE,NO_CP,ICP,rsrp=(200,0.09))
+
+# rsrp plus cp plus icp
+GSM(PURGE,ICP,rsrp=(25,0.09),cp='random_suffix')
+GSM(PURGE,ICP,rsrp=(200,0.09),cp='random_suffix')

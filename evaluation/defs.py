@@ -343,7 +343,8 @@ class APMSL(MooreLearningAlgorithm):
         'CP':       {'cex_processing': True},
         'NO_CP':    {'cex_processing': False},
         'ACAHC':    {'add_cex_as_hard_clauses': True},
-        'NO_ACAHC': {'add_cex_as_hard_clauses': False},
+        'NO_ACAHC': {'add_cex_as_hard_clauses': False,
+                     'discard_glitched_traces': False},
 
         'GTT1':      {'termination_mode': lambda glitch_percent: GlitchThresholdTermination(threshold=glitch_percent+0.5,
                                                                                             first_time=True)},

@@ -3,6 +3,8 @@ APMSL(NO_GP, NO_REP, cp='all_suffixes')
 APMSL(NO_GP, NO_REP, cp='random_suffix')
 APMSL(NO_ICP, NO_GP, NO_REP, cp='all_suffixes')
 APMSL(NO_ICP, NO_GP, NO_REP, cp='random_suffix')
+APMSL(NO_ICP, NO_GP, NO_REP, NO_ACAHC, cp='all_suffixes')
+APMSL(NO_ICP, NO_GP, NO_REP, NO_ACAHC, cp='random_suffix')
 
 # no cex processing
 APMSL(NO_CP)
