@@ -1,0 +1,57 @@
+# GP, REP, WCP
+APMSL()
+APMSL(wcp=True)
+
+######### state prefix ############
+
+# spcs + glitchaware
+APMSL(spcs=(25,0.09,'balanced_traces'))
+APMSL(spcs=(100,0.09,'balanced_traces'))
+APMSL(spcs=(200,0.09,'balanced_traces'))
+
+# spcs + glitchaware + wcp
+APMSL(wcp=True,spcs=(25,0.09,'balanced_traces'))
+APMSL(wcp=True,spcs=(100,0.09,'balanced_traces'))
+APMSL(wcp=True,spcs=(200,0.09,'balanced_traces'))
+
+# spcs without glitchaware
+APMSL(NO_GP,NO_REP,spcs=(25,0.09,'balanced_traces'))
+APMSL(NO_GP,NO_REP,spcs=(100,0.09,'balanced_traces'))
+APMSL(NO_GP,NO_REP,spcs=(200,0.09,'balanced_traces'))
+
+# spcs without glitchaware, plus wcp
+APMSL(NO_GP,NO_REP,wcp=True,spcs=(25,0.09,'balanced_traces'))
+APMSL(NO_GP,NO_REP,wcp=True,spcs=(100,0.09,'balanced_traces'))
+APMSL(NO_GP,NO_REP,wcp=True,spcs=(200,0.09,'balanced_traces'))
+
+# spcs without glitchaware, without icp
+APMSL(NO_ICP,NO_GP,NO_REP,spcs=(25,0.09,'balanced_traces'))
+APMSL(NO_ICP,NO_GP,NO_REP,spcs=(100,0.09,'balanced_traces'))
+APMSL(NO_ICP,NO_GP,NO_REP,spcs=(200,0.09,'balanced_traces'))
+
+########## random ############
+
+# rsrp + glitchaware
+APMSL(rsrp=(25,0.09))
+APMSL(rsrp=(100,0.09))
+APMSL(rsrp=(200,0.09))
+
+# rsrp + glitchaware + wcp
+APMSL(wcp=True,rsrp=(25,0.09))
+APMSL(wcp=True,rsrp=(100,0.09))
+APMSL(wcp=True,rsrp=(200,0.09))
+
+# rsrp without glitchaware
+APMSL(NO_GP,NO_REP,rsrp=(25,0.09))
+APMSL(NO_GP,NO_REP,rsrp=(100,0.09))
+APMSL(NO_GP,NO_REP,rsrp=(200,0.09))
+
+# rsrp without glitchaware, plus wcp
+APMSL(NO_GP,NO_REP,wcp=True,rsrp=(25,0.09))
+APMSL(NO_GP,NO_REP,wcp=True,rsrp=(100,0.09))
+APMSL(NO_GP,NO_REP,wcp=True,rsrp=(200,0.09))
+
+# rsrp without glitchaware, without icp
+APMSL(NO_ICP,NO_GP,NO_REP,rsrp=(25,0.09))
+APMSL(NO_ICP,NO_GP,NO_REP,rsrp=(100,0.09))
+APMSL(NO_ICP,NO_GP,NO_REP,rsrp=(200,0.09))
