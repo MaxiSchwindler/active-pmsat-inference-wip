@@ -12,7 +12,8 @@ from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.oracles import RandomWMethodEqOracle
 
 import active_pmsatlearn.learnalgo
-from active_pmsatlearn import GlitchThresholdTermination
+from active_pmsatlearn import GlitchThresholdTermination, HypothesisDoesNotChangeTermination, \
+    GlitchImprovementTermination
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
 from evaluation.gsm_comparison.active_gsm import run_activeGSM
@@ -350,6 +351,8 @@ class APMSL(MooreLearningAlgorithm):
                                                                                             first_time=True)},
         'GTT2':      {'termination_mode': lambda glitch_percent: GlitchThresholdTermination(threshold=glitch_percent+0.5,
                                                                                             first_time=False)},
+        'TERMBISIM': {'termination_mode': lambda glitch_percent: HypothesisDoesNotChangeTermination()},
+        'TERMIMPR':  {'termination_mode': lambda glitch_percent: GlitchImprovementTermination()},
     }
 
 
