@@ -6,6 +6,7 @@ from typing import Literal, Optional
 
 from pebble import concurrent
 
+import aalpy
 from pmsatlearn import run_pmSATLearn
 
 from active_pmsatlearn.defs import *
@@ -736,7 +737,8 @@ def should_terminate(current_hypotheses: HypothesesWindow, current_scores: dict[
                 return False, None, additional_data
 
         case HypothesisDoesNotChangeTermination():
-            dis = peak_hyp.find_distinguishing_seq(peak_hyp.initial_state, prev_peak_hyp.initial_state, peak_hyp.get_input_alphabet())
+            # dis = peak_hyp.find_distinguishing_seq(peak_hyp.initial_state, prev_peak_hyp.initial_state, peak_hyp.get_input_alphabet())
+            dis = aalpy.bisimilar(peak_hyp, prev_peak_hyp, return_cex=True)
             if dis is None:
                 logger.debug(f"No distinguishing sequence between current hypothesis and previous hypothesis found. Terminating")
                 return True, (peak_hyp, peak_hyp_stoc, peak_pmsat_info), None
