@@ -1,0 +1,14 @@
+# ic, cex=random, replay, ranpro
+APMSL(cp='random_suffix')
+
+# ic, replay, repro
+APMSL(NO_CP)
+
+# ic, wcp, replay, repro
+APMSL(NO_CP,wcp=True)
+
+# ic, spc=25
+APMSL(NO_CP,NO_GP,NO_REP,spcs=(25,0.09,'balanced_traces'))
+
+# ic, spc=25, replay, repro
+APMSL(NO_CP,spcs=(25,0.09,'balanced_traces'))
