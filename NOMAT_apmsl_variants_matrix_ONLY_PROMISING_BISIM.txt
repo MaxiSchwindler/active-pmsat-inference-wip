@@ -1,3 +1,7 @@
+# ic, wcp, replay, repro
+# APMSL(TERMIMPR, wcp=True)
+APMSL(TERMBISIM, wcp=True)
+
 # ic, wcp, spc=100
 # APMSL(TERMIMPR,NO_GP,NO_REP,wcp=True,spcs=(100,0.09,'balanced_traces'))
 APMSL(TERMBISIM,NO_GP,NO_REP,wcp=True,spcs=(100,0.09,'balanced_traces'))
