@@ -1,0 +1,15 @@
+# scps plus ic
+GSM(PURGE,NO_CP,ICP,spcs=(100,0.09,'balanced_traces'))
+GSM(PURGE,NO_CP,ICP,spcs=(200,0.09,'balanced_traces'))
+
+# rsrp plus ic
+GSM(PURGE,NO_CP,ICP,rsrp=(100,0.09))
+GSM(PURGE,NO_CP,ICP,rsrp=(200,0.09))
+
+# scps plus ic
+GSM(NO_PURGE,NO_CP,ICP,spcs=(100,0.09,'balanced_traces'))
+GSM(NO_PURGE,NO_CP,ICP,spcs=(200,0.09,'balanced_traces'))
+
+# rsrp plus ic
+GSM(NO_PURGE,NO_CP,ICP,rsrp=(100,0.09))
+GSM(NO_PURGE,NO_CP,ICP,rsrp=(200,0.09))

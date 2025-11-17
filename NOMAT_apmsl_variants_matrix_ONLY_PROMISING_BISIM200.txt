@@ -16,4 +16,4 @@ APMSL(TERMBISIM,wcp=True, rsrp=(200,0.09))
 
 # ic, wcp, scp=100, replay, repro
 # APMSL(TERMIMPR,wcp=True,spcs=(100,0.09,'balanced_traces'))
-APMSL(TERMBISIM,wcp=True,spcs=(200.09,'balanced_traces'))
+APMSL(TERMBISIM,wcp=True,spcs=(200,0.09,'balanced_traces'))

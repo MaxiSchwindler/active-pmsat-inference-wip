@@ -1,0 +1,37 @@
+# GP, REP
+APMSL(TERMBISIM)
+
+######### state prefix ############
+
+# spcs + glitchaware
+APMSL(TERMBISIM,spcs=(100,0.09,'balanced_traces'))
+APMSL(TERMBISIM,spcs=(200,0.09,'balanced_traces'))
+
+# spcs + glitchaware + wcp
+APMSL(TERMBISIM,wcp=True,spcs=(200,0.09,'balanced_traces'))
+
+# spcs without glitchaware
+APMSL(TERMBISIM,NO_GP,NO_REP,spcs=(100,0.09,'balanced_traces'))
+APMSL(TERMBISIM,NO_GP,NO_REP,spcs=(200,0.09,'balanced_traces'))
+
+# spcs without glitchaware, without icp
+APMSL(TERMBISIM,NO_ICP,NO_GP,NO_REP,spcs=(100,0.09,'balanced_traces'))
+APMSL(TERMBISIM,NO_ICP,NO_GP,NO_REP,spcs=(200,0.09,'balanced_traces'))
+
+########## random ############
+
+# rsrp + glitchaware
+APMSL(TERMBISIM,rsrp=(100,0.09))
+APMSL(TERMBISIM,rsrp=(200,0.09))
+
+# rsrp + glitchaware + wcp
+
+# rsrp without glitchaware
+APMSL(TERMBISIM,NO_GP,NO_REP,rsrp=(100,0.09))
+APMSL(TERMBISIM,NO_GP,NO_REP,rsrp=(200,0.09))
+
+# rsrp without glitchaware, plus wcp
+
+# rsrp without glitchaware, without icp
+APMSL(TERMBISIM,NO_ICP,NO_GP,NO_REP,rsrp=(100,0.09))
+APMSL(TERMBISIM,NO_ICP,NO_GP,NO_REP,rsrp=(200,0.09))
