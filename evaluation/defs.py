@@ -7,7 +7,7 @@ from inspect import signature, Signature, Parameter
 from typing import Callable, Any
 
 import aalpy.learning_algs
-from aalpy import run_KV, run_Lstar
+from aalpy import run_KV, run_Lstar, WMethodEqOracle
 from aalpy.SULs import MooreSUL, MealySUL
 from aalpy.oracles import RandomWMethodEqOracle
 
@@ -16,6 +16,7 @@ from active_pmsatlearn import GlitchThresholdTermination, HypothesisDoesNotChang
     GlitchImprovementTermination
 from active_pmsatlearn.learnalgo import run_activePmSATLearn
 from active_pmsatlearn.oracles import RobustRandomWalkEqOracle, RobustPerfectMooreEqOracle
+from active_pmsatlearn.oracles.RobustWMethodEqOracle import RobustWMethodEqOracle
 from evaluation.gsm_comparison.active_gsm import run_activeGSM
 from evaluation.utils import dict_product
 
@@ -49,7 +50,7 @@ class RobustRandomWalkOracleWithoutAbort(RobustRandomWalkOracle):
             max_num_tries=None,
         )
 
-class RobustRandomWalkOracleWithoutAbortFixed(RobustRandomWalkEqOracle):
+class RobustRandomWalkOracleWithoutAbortFixed50(RobustRandomWalkEqOracle):
     def __init__(self, sul: MooreSUL | MealySUL):
         super().__init__(
             alphabet=sul.automaton.get_input_alphabet(),
@@ -458,6 +459,11 @@ class GSM(MooreLearningAlgorithm):
         return {
             'failure_rate': glitch_percent / 100,
         }
+
+
+class KV(MooreLearningAlgorithm):
+    function = run_KV
+
 
 class KVWithGlitchesInOracle(MooreLearningAlgorithm):
     @staticmethod
