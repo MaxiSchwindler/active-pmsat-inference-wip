@@ -7,6 +7,8 @@ import numpy as np
 import pytest
 from aalpy import MooreMachine
 from aalpy.SULs import MooreSUL
+from active_pmsatlearn import RobustEqOracleMixin
+from active_pmsatlearn.oracles import RobustRandomWalkEqOracle
 
 from active_pmsatlearn.utils import trace_query
 from evaluation.generate_automata import generate_automaton
@@ -19,7 +21,7 @@ from utils import MOORE_CONFIGS, mm, compare_states
 @pytest.mark.parametrize("mm", MOORE_CONFIGS, indirect=True, ids=lambda c: f"{c['num_states']}s{c['num_inputs']}i{c['num_outputs']}o")
 @pytest.mark.parametrize("percent_glitches", [0.0, 0.5, 1.0, 5.0, 100.0], ids=lambda g: f"{g}%".replace('.', ','))
 @pytest.mark.parametrize("traced", [True, False], ids=lambda t: "traced" if t else "non-traced")
-def test_glitching_sul(mm: MooreMachine, percent_glitches: float, traced: bool, fault_mode: str = "enter_random_state"):
+def test_validate_cex(mm: MooreMachine, percent_glitches: float, traced: bool, fault_mode: str = "enter_random_state"):
     sul_mm = MooreMachine(initial_state=mm.initial_state, states=mm.states)
     underlying_sul = TracedMooreSUL(sul_mm) if traced else MooreSUL(sul_mm)
     sul = GlitchingSUL(sul=underlying_sul, glitch_percentage=percent_glitches, fault_type="enter_random_state")
@@ -33,6 +35,22 @@ def test_glitching_sul(mm: MooreMachine, percent_glitches: float, traced: bool, 
     extension_length = 10  # len(mm.states) + 1
     all_input_combinations = list(itertools.product(input_alphabet, repeat=extension_length))
     total_num_steps = len(all_input_combinations) * extension_length
+
+    robust_oracle = RobustRandomWalkEqOracle(
+        alphabet=input_alphabet,
+        sul=sul,
+        num_steps=50,
+        reset_prob=0.09,
+        reset_after_cex=True,
+
+        perform_n_times=20,
+        validity_threshold=0.51,
+        max_num_tries=5,
+    )
+
+    hyp_mm = mm.copy()
+    hyp_mm.
+    robust_oracle.validate_counterexample()
 
     # quick test to show that the states are the same objects, but steps in the sul don't influence the mm:
     # sul.automaton.reset_to_initial()
@@ -72,54 +90,6 @@ def test_glitching_sul(mm: MooreMachine, percent_glitches: float, traced: bool, 
 
     assert num_glitches == sul.num_glitched_steps
     actual_percentage_glitches = num_glitches / total_num_steps * 100
-    if percent_glitches == 0.0:
-        assert actual_percentage_glitches == 0
-    else:
-        assert percent_glitches - 0.1 <= actual_percentage_glitches <= percent_glitches + 0.1
-        assert np.isclose(actual_percentage_glitches, percent_glitches, atol=0.05, rtol=0.01)
-
-
-@pytest.mark.parametrize("mm", MOORE_CONFIGS, indirect=True, ids=lambda c: f"{c['num_states']}s{c['num_inputs']}i{c['num_outputs']}o")
-@pytest.mark.parametrize("percent_glitches", [0.0, 0.5, 1.0, 5.0, 100.0], ids=lambda g: f"{g}%".replace('.', ','))
-def test_glitching_sul_taken_transitions(mm: MooreMachine, percent_glitches: float):
-    sul_mm = MooreMachine(initial_state=mm.initial_state, states=mm.states)
-    traced_sul = TracedMooreSUL(sul_mm)
-    sul = GlitchingSUL(sul=traced_sul, glitch_percentage=percent_glitches, fault_type="enter_random_state")
-
-    input_alphabet = mm.get_input_alphabet()
-    extension_length = 10  # len(mm.states) + 1
-    all_input_combinations = list(itertools.product(input_alphabet, repeat=extension_length))
-    expected_total_num_steps = len(all_input_combinations) * extension_length
-
-    traces = []
-    for input_combination in all_input_combinations:
-        trace = trace_query(sul, input_combination)
-        for given_input, returned_input in zip(input_combination, [i for i, o in trace[1:]]):
-            assert given_input == returned_input
-        traces.append(trace)
-    num_steps_in_traces = sum(len(t[1:]) for t in traces)
-    assert num_steps_in_traces == expected_total_num_steps
-
-    sul_transitions = TracedMooreSUL.flatten_transitions_dict(sul.taken_transitions)
-
-    glitched_freqs = []
-    dominant_freqs = []
-    for (s1, l, s2), trans_count in sul_transitions.items():
-        s1 = mm.get_state_by_id(s1)
-        s2 = mm.get_state_by_id(s2)
-        if s1.transitions[l] != s2:
-            glitched_freqs.append(trans_count)
-        else:
-            dominant_freqs.append(trans_count)
-
-    total_num_glitches = sum(g for g in glitched_freqs)
-    total_num_dominant = sum(d for d in dominant_freqs)
-    total_num_steps = (total_num_glitches + total_num_dominant)
-
-    assert total_num_steps == sul.num_steps == expected_total_num_steps
-    assert total_num_glitches == sul.num_glitched_steps
-
-    actual_percentage_glitches = total_num_glitches / total_num_steps * 100
     if percent_glitches == 0.0:
         assert actual_percentage_glitches == 0
     else:

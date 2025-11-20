@@ -323,7 +323,7 @@ def learn_automaton(automaton_type: str, automaton_file: str, algorithm_name: st
 
     info["algorithm_kwargs"] = {k: v if is_builtin_type(v) else str(v) for k, v in (algorithm.kwargs | alg_kwargs).items()}
 
-    if oracle is not None:
+    if oracle is not None and hasattr(oracle, "info"):
         info |= oracle.info
 
     # TODO also write learned model etc

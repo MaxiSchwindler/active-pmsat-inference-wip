@@ -651,7 +651,7 @@ def should_terminate(current_hypotheses: HypothesesWindow, current_scores: dict[
         logger.debug(f"Asking eq oracle {type(eq_oracle).__name__} for a counterexample...")
 
         abs_peak_hyp = get_absolute_peak_hypothesis(current_hypotheses, current_scores)
-        cex, cex_outputs = eq_oracle.find_cex(abs_peak_hyp[0])
+        cex, cex_outputs = eq_oracle.find_cex(abs_peak_hyp[0], return_outputs=True)
         if cex is None:
             logger.debug(f"Oracle did not find counterexample. Terminating.")
             return True, abs_peak_hyp, None

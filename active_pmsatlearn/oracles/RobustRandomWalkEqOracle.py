@@ -112,8 +112,7 @@ class RobustRandomWalkEqOracle(Oracle, RobustEqOracleMixin):
                         continue
 
                 if not valid_cex:
-                    outputs_sul.pop()
-                    outputs_sul.append(cex_outputs[-1])
+                    outputs_sul[:] = cex_outputs[:]
                     continue
 
                 if self.reset_after_cex:

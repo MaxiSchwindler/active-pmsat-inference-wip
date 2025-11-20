@@ -60,13 +60,75 @@ class RobustRandomWalkOracleWithoutAbortFixed(RobustRandomWalkEqOracle):
             max_num_tries=None
         )
 
+class RobustRandomWalkOracleWithoutAbortFixed20(RobustRandomWalkEqOracle):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            alphabet=sul.automaton.get_input_alphabet(),
+            sul=sul,
+            num_steps=20_000,
+            reset_after_cex=True,
+            reset_prob=0.09,
+            max_num_tries=None
+        )
+
+
+class RobustWMethodOracle15(RobustWMethodEqOracle):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            alphabet=sul.automaton.get_input_alphabet(),
+            sul=sul,
+            max_number_of_states=15,
+            shuffle_test_set=True,
+            perform_n_times=20,
+            validity_threshold=0.51,
+            max_num_tries=float('inf')
+        )
+
+class RobustWMethodOracleCorrectSize(RobustWMethodEqOracle):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            alphabet=sul.automaton.get_input_alphabet(),
+            sul=sul,
+            max_number_of_states=sul.automaton.size,
+            shuffle_test_set=True,
+            perform_n_times=20,
+            validity_threshold=0.51,
+            max_num_tries=float('inf')
+        )
+
+
+class WMethod15(WMethodEqOracle):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            alphabet=sul.automaton.get_input_alphabet(),
+            sul=sul,
+            max_number_of_states=15,
+            shuffle_test_set=True,
+        )
+
+class WMethodCorrect(WMethodEqOracle):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            alphabet=sul.automaton.get_input_alphabet(),
+            sul=sul,
+            max_number_of_states=sul.automaton.size,
+            shuffle_test_set=True,
+        )
+
 
 oracles = {
     "None": lambda sul: None,
     "Perfect": RobustPerfectMooreOracle,
     "RandomWithAbort": RobustRandomWalkOracle,
     "RandomWithoutAbort": RobustRandomWalkOracleWithoutAbort,
-    "RandomWithoutAbortFixed": RobustRandomWalkOracleWithoutAbortFixed,
+    "RandomWithoutAbort50": RobustRandomWalkOracleWithoutAbortFixed50,
+    "RandomWithoutAbort20": RobustRandomWalkOracleWithoutAbortFixed20,
+
+    "RobustWMethod(15)": RobustWMethodOracle15,
+    "RobustWMethod(correct)": RobustWMethodOracleCorrectSize,
+
+    "WMethod(15)": WMethod15,
+    "WMethod(correct)": WMethodCorrect,
 }
 
 

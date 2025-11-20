@@ -32,6 +32,8 @@ class RobustEqOracleMixin:
         self.num_steps_validation = 0
 
         self.info = dict(
+            validation_steps_done=0,
+            validation_queries_done=0,
             counterexamples_investigated=0,
             counterexamples_validated=0,
             counterexamples_invalidated=0,
@@ -49,23 +51,6 @@ class RobustEqOracleMixin:
             no_counterexamples_found=0,
         )
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-
-        if hasattr(cls, 'find_cex'):
-            original_find_cex = getattr(cls, 'find_cex')
-
-            @wraps(original_find_cex)
-            def timed_find_cex(self, *args, **kwargs):
-                eq_query_start = time.time()
-                result = original_find_cex(self, *args, **kwargs)
-                self.eq_query_time += time.time() - eq_query_start
-
-                return result
-
-            # Replace the method in the subclass with the timed version
-            setattr(cls, 'find_cex', timed_find_cex)
-
     def validate_counterexample(self, inputs, outputs_sul, outputs_hyp):
         log(f"{type(self).__name__} found a possible counterexample. "
             f"Performing counterexample {self.perform_n_times} times on SUL to validate.")
@@ -79,32 +64,26 @@ class RobustEqOracleMixin:
         assert outputs_sul[-1] != outputs_hyp[-1], f"Output in SUL and HYP should differ in the last step! {outputs_sul[-1]=} == {outputs_hyp[-1]=}"
         self.info["counterexamples_investigated"] += 1
 
-        def _query_sul(inputs_to_query):
-            if hasattr(self, 'num_steps'):
-                self.num_steps += len(inputs_to_query)
-            if hasattr(self, 'num_queries'):
-                self.num_queries += 1
+        def query_sul(inputs_to_query):
+            """ Query the SUL for inputs_to_query, but don't actually call sul.query()
+            because sul.query() increments sul.num_steps and sul.num_queries, which
+            is actually used to track learning steps, not oracle steps
+            """
+            self.sul.pre()
+            out = [self.sul.step(letter) for letter in inputs_to_query]
+            self.sul.post()
 
-            steps_before = self.sul.num_steps
-            queries_before = self.sul.num_queries
+            self.num_steps += len(inputs_to_query)
+            self.info["validation_steps_done"] += len(inputs_to_query)
 
-            res = self.sul.query(inputs_to_query)
+            self.num_queries += 1
+            self.info["validation_queries_done"] += 1
 
-            self.num_steps_validation += len(inputs_to_query)
-
-            # do this so that the num_steps in the SUL don't get influenced by the oracle, as usual
-            if self.sul.num_steps != steps_before:
-                self.sul.num_steps -= len(inputs_to_query)
-            if self.sul.num_queries != queries_before:
-                self.sul.num_queries -= 1
-            assert self.sul.num_steps == steps_before
-            assert self.sul.num_queries == queries_before
-
-            return res
+            return out
 
         traces = [tuple(outputs_sul)]
-        for _ in range(self.perform_n_times):
-            traces.append(tuple(_query_sul(inputs)))
+        for _ in range(self.perform_n_times - 1):
+            traces.append(tuple(query_sul(inputs)))
             log(f"Collected trace: {traces[-1]}", level=DETAIL)
 
         majority_trace = None
@@ -147,7 +126,7 @@ class RobustEqOracleMixin:
 
         # if we return false, we also want to bring the SUL into the correct state
         log(f"Bringing the SUL into correct state...")
-        while tuple(_query_sul(inputs)) != tuple(majority_trace):
+        while tuple(query_sul(inputs)) != tuple(majority_trace):
             pass
 
         self.info["counterexamples_invalidated"] += 1
