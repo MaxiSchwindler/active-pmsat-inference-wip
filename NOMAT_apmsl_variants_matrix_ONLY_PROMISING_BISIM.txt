@@ -1,19 +1,18 @@
 # ic, wcp, replay, repro
-# APMSL(TERMIMPR, wcp=True)
 APMSL(TERMBISIM, wcp=True)
 
-# ic, wcp, spc=100
-# APMSL(TERMIMPR,NO_GP,NO_REP,wcp=True,spcs=(100,0.09,'balanced_traces'))
-APMSL(TERMBISIM,NO_GP,NO_REP,wcp=True,spcs=(100,0.09,'balanced_traces'))
+# ic, spc=200
+APMSL(TERMBISIM,NO_GP,NO_REP,spcs=(200,0.09,'balanced_traces'))
 
-# ic, wcp, rw=100
-# APMSL(TERMIMPR,NO_GP,NO_REP,wcp=True, rsrp=(100,0.09))
-APMSL(TERMBISIM,NO_GP,NO_REP,wcp=True, rsrp=(100,0.09))
+# ic, wcp, spc=200
+APMSL(TERMBISIM,NO_GP,NO_REP,wcp=True,spcs=(200,0.09,'balanced_traces'))
 
-# ic, wcp, rw=100, replay, repro
-# APMSL(TERMIMPR,wcp=True, rsrp=(100,0.09))
-APMSL(TERMBISIM,wcp=True, rsrp=(100,0.09))
+# ic, scp=200, replay, repro
+APMSL(TERMBISIM,spcs=(200,0.09,'balanced_traces'))
 
-# ic, wcp, scp=100, replay, repro
-# APMSL(TERMIMPR,wcp=True,spcs=(100,0.09,'balanced_traces'))
-APMSL(TERMBISIM,wcp=True,spcs=(100,0.09,'balanced_traces'))
+# ic, wcp, rw=200
+APMSL(TERMBISIM,NO_GP,NO_REP,wcp=True, rsrp=(200,0.09))
+
+# ic, rw=200, replay, repro
+APMSL(TERMBISIM, rsrp=(200,0.09))
+

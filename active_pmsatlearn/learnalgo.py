@@ -670,13 +670,13 @@ def should_terminate(current_hypotheses: HypothesesWindow, current_scores: dict[
     logger.debug(f"Previous peak was at index {prev_peak_index} of sliding window <{min(previous_scores.keys())}-{max(previous_scores.keys())}>; "
                  f"i.e. at {prev_peak_num_states} states")
 
-    if not is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states):
-        return False, None, additional_data
-
-    # TODO do we want this?
-    if prev_peak_num_states != peak_num_states:
-        logger.debug(f"Continue learning with the same window, since the last peak was at a different number of states ({prev_peak_num_states})")
-        return False, None, additional_data
+    # if not is_positioned_correctly(sliding_window_size, peak_index, current_min_num_states, min_allowed_num_states):
+    #     return False, None, additional_data
+    #
+    # # TODO do we want this?
+    # if prev_peak_num_states != peak_num_states:
+    #     logger.debug(f"Continue learning with the same window, since the last peak was at a different number of states ({prev_peak_num_states})")
+    #     return False, None, additional_data
 
     peak_hyp, peak_hyp_stoc, peak_pmsat_info = current_hypotheses[peak_num_states]
     prev_peak_hyp, prev_peak_hyp_stoc, prev_peak_pmsat_info = previous_hypotheses[prev_peak_num_states]
