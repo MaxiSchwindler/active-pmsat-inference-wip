@@ -69,6 +69,9 @@ class RobustEqOracleMixin:
             because sul.query() increments sul.num_steps and sul.num_queries, which
             is actually used to track learning steps, not oracle steps
             """
+            steps_before = self.sul.num_steps
+            queries_before = self.sul.num_queries
+
             self.sul.pre()
             out = [self.sul.step(letter) for letter in inputs_to_query]
             self.sul.post()
@@ -79,6 +82,11 @@ class RobustEqOracleMixin:
             self.num_queries += 1
             self.info["validation_queries_done"] += 1
 
+            # sul.num_steps and sul.num_queries is used to count learning steps,
+            # and is only incremented by sul.query(). Oracles only perform sul.step().
+            assert self.sul.num_steps == steps_before
+            assert self.sul.num_queries == queries_before
+
             return out
 
         traces = [tuple(outputs_sul)]
@@ -87,7 +95,7 @@ class RobustEqOracleMixin:
             log(f"Collected trace: {traces[-1]}", level=DETAIL)
 
         majority_trace = None
-        for trace in set(traces):
+        for trace in traces:
             if (c := traces.count(trace)) >= self.threshold:
                 majority_trace = trace
                 log(f"The output sequence {majority_trace} was returned {c} "
