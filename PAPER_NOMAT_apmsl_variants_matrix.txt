@@ -1,0 +1,11 @@
+# ic, scp=100
+APMSL(TERMBISIM,NO_GP,NO_REP,NO_CP,spcs=(100,0.09,'balanced_traces'))
+
+# ic, scp=200
+APMSL(TERMBISIM,NO_GP,NO_REP,NO_CP,spcs=(200,0.09,'balanced_traces'))
+
+# ic, replay, repro
+APMSL(TERMBISIM,NO_CP)
+
+# ic, replay, repro, scp=200
+APMSL(TERMBISIM,NO_CP,spcs=(200,0.09,'balanced_traces'))
