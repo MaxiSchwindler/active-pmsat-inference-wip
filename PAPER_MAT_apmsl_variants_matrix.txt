@@ -1,0 +1,19 @@
+# cex=all
+APMSL(NO_ICP, NO_GP, NO_REP, cp='all_suffixes')
+# cex=random
+APMSL(NO_ICP, NO_GP, NO_REP, cp='random_suffix')
+
+# ic, cex=random, scp=200
+APMSL(NO_GP, NO_REP, cp='random_suffix', spcs=(200,0.09,'balanced_traces'))
+
+# ic, scp=100
+APMSL(NO_GP, NO_REP, NO_CP, spcs=(100,0.09,'balanced_traces'))
+
+# ic, scp=200
+APMSL(NO_GP, NO_REP, NO_CP, spcs=(200,0.09,'balanced_traces'))
+
+# ic, replay, repro
+APMSL(NO_CP)
+
+# ic, replay, repro, scp=200
+APMSL(NO_CP, spcs=(200,0.09,'balanced_traces'))
