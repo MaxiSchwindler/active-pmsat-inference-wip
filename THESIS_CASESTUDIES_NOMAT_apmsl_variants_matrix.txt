@@ -1,0 +1,17 @@
+# ic, wcp, replay, repro
+APMSL(TERMBISIM,NO_CP,wcp=True)
+
+# ic, replay, repro, rw=200
+APMSL(TERMBISIM,NO_CP,rsrp=(200,0.09))
+
+# ic, replay, repro, scp=200
+APMSL(TERMBISIM,NO_CP,spcs=(200,0.09,'balanced_traces'))
+
+# ic, replay, repro, scp=400
+APMSL(TERMBISIM,NO_CP,spcs=(400,0.09,'balanced_traces'))
+
+# ic, scp=200
+APMSL(TERMBISIM,NO_GP,NO_REP,NO_CP,spcs=(200,0.09,'balanced_traces'))
+
+# ic, scp=400
+APMSL(TERMBISIM,NO_GP,NO_REP,NO_CP,spcs=(400,0.09,'balanced_traces'))
