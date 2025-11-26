@@ -84,6 +84,19 @@ class RobustRandomWalkOracleWithoutAbortFixed500(RobustRandomWalkEqOracle):
         )
 
 
+class RobustRandomWalkOracleWithoutAbortFixed10_000(RobustRandomWalkEqOracle):
+    def __init__(self, sul: MooreSUL | MealySUL):
+        super().__init__(
+            alphabet=sul.automaton.get_input_alphabet(),
+            sul=sul,
+            num_steps=10_000,
+            reset_after_cex=True,
+            reset_prob=0.09,
+            max_num_tries=None
+        )
+
+
+
 class RobustWMethodOracle15(RobustWMethodEqOracle):
     def __init__(self, sul: MooreSUL | MealySUL):
         super().__init__(
@@ -136,6 +149,7 @@ oracles = {
     "RandomWithoutAbort50": RobustRandomWalkOracleWithoutAbortFixed50,
     "RandomWithoutAbort20": RobustRandomWalkOracleWithoutAbortFixed20,
     "RandomWithoutAbort500": RobustRandomWalkOracleWithoutAbortFixed500,
+    "RandomWithoutAbort10000": RobustRandomWalkOracleWithoutAbortFixed10_000,
 
     "RobustWMethod(15)": RobustWMethodOracle15,
     "RobustWMethod(correct)": RobustWMethodOracleCorrectSize,
